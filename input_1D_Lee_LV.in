@@ -1,0 +1,47 @@
+vessel_file = updated_vessels_Lee_data_term_rad_mod.dat // updated_vessels_Lee_inside_data_mod.dat // updated_vessels_Lee_inside_data.dat // updated_vessels_Lee_data.dat // updated_vessels_Lee_2008_data.dat // vessels_mesh_data_Shervin.dat // vessels_mesh_data_Qaurt_fine.dat // vessels_single_mesh_data_0_1.dat
+
+restart = 0
+restart_part_vein = 0
+st_tree = 1
+
+restart_file_name = restart_data_double_32767.dat
+partvein_file_name = partvein_data_double_32767.dat
+
+flow_type = 1 // 0 for poisuille, 1 for 1D flow
+trans_soln = 1
+eigen_bound = 2 // 0 no BC using eigen, 1 Eqs. 26 and 27 in Lee 2008 in weak form (Removed in this version, refer 84_29_30_2022), 2 same in strong form
+beta_type = 1 // 0 for constant beta, 1 for linearly dependent on r
+interface_type = 0 // 0 for pressure, 1 for pressure and kinetic energy
+intervess_type = 1
+wave_type = 0 // 0 for constant wave speed
+
+time_integ = 2 // 1 for BDF1, 2 for BDF 2
+inlet_bc = 0 // 0 for pressure BC, 1 for non reflecting BC
+outlet_bc = 0 // 0 for pressure BC, 1 for non reflecting BC
+
+alpha_t = 1.0
+L_v = 1.0 // in mm
+rho_v = 1.0e-6 // in kg/mm^3
+mu_v = 3.2e-6 // in kg/mms
+alpha_0 = 1.25 // 1.25
+beta_0 = 100.0 // 11.82 //  83.0 // 451352.0 //.0 // 1.256e6 // in kg/s^2
+p_0 = 10.0 // 1.0 // 2.66e6 // kg/mms^2
+c_v = 0.75e4 // 1.5e4 // mm/s
+dt = 0.00003 // 0.00001 // 0.0316 // 0.5 // 1.12e-2 // 0.1 // 0.477 // 1.0 non-dimensional
+gamma_perm = 1.0e-7
+
+pin_type = 3
+pout_type = 3
+pext_type = 0
+
+p_in_const = 101.8 // kPa
+p_out_const = 0.0 // kPa
+p_ext_const = 0.0 // kPa
+
+venous_flow = 1
+
+t_load = 0.1 // s
+time_per = 0.8 //0.2 // 0.25  // s
+
+N_period = 32768
+N_total = 327680
