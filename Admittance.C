@@ -102,7 +102,7 @@ void Admittance::compute_impedance(int tmstps, double Per, double rho, double mu
         YHAT22[j] = comp_m * (1.0 / Per);
     }
 
-    for (int j = 0; j < tmstps; j++)
+    /* for (int j = 0; j < tmstps; j++)
     {
         double y11_j = 0;
         double y12_j = 0;
@@ -121,9 +121,9 @@ void Admittance::compute_impedance(int tmstps, double Per, double rho, double mu
         y21(j) = y21_j / tmstps;
         y22(j) = y22_j / tmstps;
         
-    }
+    } */
 
-    /* cout<<"t="<<tmstps/2<<" "<<YHAT11[tmstps/2]<<" "<<YHAT12[tmstps/2]<<" "<<YHAT21[tmstps/2]<<" "<<YHAT22[tmstps/2]<<endl;
+    cout<<"t="<<tmstps/2<<" "<<YHAT11[tmstps/2]<<" "<<YHAT12[tmstps/2]<<" "<<YHAT21[tmstps/2]<<" "<<YHAT22[tmstps/2]<<endl;
 
     fftshift(YHAT11);
     fftshift(YHAT12);
@@ -151,11 +151,11 @@ void Admittance::compute_impedance(int tmstps, double Per, double rho, double mu
 
     for (int j = 0; j < YHAT11.size(); j++)
     {
-        y11(j) = real(YHAT11[j]);
-        y12(j) = real(YHAT12[j]);
-        y21(j) = real(YHAT21[j]);
-        y22(j) = real(YHAT22[j]);
-    } */
+        y11(j) = real(YHAT11[j])/tmstps;
+        y12(j) = real(YHAT12[j])/tmstps;
+        y21(j) = real(YHAT21[j])/tmstps;
+        y22(j) = real(YHAT22[j])/tmstps;
+    }
 
     cout << "EVERYTHING IS FINE" << endl;
     cout << "t=" << 0 << y11(0) << " " << y12(0) << " " << y21(0) << " " << y22(0) << endl;

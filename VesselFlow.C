@@ -3361,6 +3361,7 @@ void VesselFlow::initialise_partvein(int rank, int np, LibMeshInit &init)
             terminal_num++;
             vessels_in[i].ter_num = terminal_num;
             vessels[i].ter_num = terminal_num;
+            if(venous_flow == 1)
             vessels[i + vessels_in.size()].ter_num = terminal_num;
         }
     }
