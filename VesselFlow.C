@@ -1217,7 +1217,7 @@ void VesselFlow::compute_jacobian(const NumericVector<Number> &,
 
                     double sqrt_At_cur =
                         sqrt(A0_cur) +
-                        A0bybeta * (PDrain(ttime) +
+                        A0bybeta * (POutlet(ttime) +
                                     sqrt(p_0 / rho_v) * ((L_v * L_v) / gamma_perm) *
                                         system.current_solution(dof_indices_u[1]));
 
@@ -2740,6 +2740,23 @@ void VesselFlow::compute_pext(double time_v)
             pext_cur = 13.0 + 120.0 * (1.0 - exp(-pow((ttime_dim)-0.5, 2) / 0.007));
         else if ((ttime_dim) < 0.8)
             pext_cur = 132.53 * (1.0 - exp(-pow(0.8 - (ttime_dim), 2) / 0.0015));
+        else
+            pext_cur = 0.0;
+
+        pext_cur *= 0.13332;
+    }
+
+    else if (pext_type == 4)
+    {
+
+        if (ttime_dim < 0.2)
+            pext_cur = 13.0 * ((ttime_dim) / 0.2);
+        else if ((ttime_dim) < 0.5)
+            pext_cur = 13.0;
+        else if ((ttime_dim) < 0.7)
+            pext_cur = 13.0 + 160.0 * (1.0 - exp(-pow((ttime_dim)-0.5, 2) / 0.007));
+        else if ((ttime_dim) < 0.8)
+            pext_cur = 172.53 * (1.0 - exp(-pow(0.8 - (ttime_dim), 2) / 0.0015));
         else
             pext_cur = 0.0;
 
