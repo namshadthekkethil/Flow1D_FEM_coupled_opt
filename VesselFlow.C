@@ -2100,7 +2100,7 @@ void VesselFlow::compute_residual(const NumericVector<Number> &X,
                     double A0bybeta = A0_cur / vessels[elem_id].beta;
                     double At_cur = pow(
                         sqrt(A0_cur) +
-                            A0bybeta * (PDrain(ttime) +
+                            A0bybeta * (POutlet(ttime) +
                                         sqrt(p_0 / rho_v) * ((L_v * L_v) / gamma_perm) *
                                             system.current_solution(dof_indices_u[1])),
                         2);
@@ -3258,40 +3258,49 @@ void VesselFlow::writeFlowDataInlet(EquationSystems &es, int it, int rank)
                     (vessels[n].beta / (M_PI * vessels[n].r * vessels[n].r)) *
                         (sqrt(A1) - sqrt(M_PI * vessels[n].r * vessels[n].r));
 
-        const Elem *elem_out = mesh.elem_ptr(vessels_in.size());
-
-        dof_map.dof_indices(elem_out, dof_indices_u, u_var);
-        dof_map.dof_indices(elem_out, dof_indices_p, p_var);
-
-        double Q1_prime_out = flow_vec[dof_indices_u[0]];
-        double A1_prime_out = flow_vec[dof_indices_p[0]];
-
-        double Q1_out = Q1_prime_out * sqrt(p_0 / rho_v) * L_v * L_v;
-        double A1_out = A1_prime_out * L_v * L_v;
-
-        double p1_out = vessels[n].pext +
-                        (vessels[n].beta / (M_PI * vessels[n].r * vessels[n].r)) *
-                            (sqrt(A1_out) - sqrt(M_PI * vessels[n].r * vessels[n].r));
-
-        qArtTotal = 0.0;
-        qVeinTotal = 0.0;
-        pArtTotal = 0.0;
-        pVeinTotal = 0.0;
-        for (int i = 0; i < qArt.size(); i++)
+        if(venous_flow == 0)
         {
-            qArtTotal += qArt[i];
-            qVeinTotal += qVein[i];
-
-            pArtTotal += pArt(time_itr_per)[i];
-            pVeinTotal += pVein(time_itr_per)[i];
+            file_vess << ttime * sqrt(rho_v / p_0) * L_v << " " << Q1 << " " << p1 <<endl;
         }
 
-        qArtTotal *= sqrt(p_0 / rho_v) * L_v * L_v;
-        qVeinTotal *= sqrt(p_0 / rho_v) * L_v * L_v;
+        else if (venous_flow == 1)
+        {
+            const Elem *elem_out = mesh.elem_ptr(vessels_in.size());
 
-        file_vess << ttime * sqrt(rho_v / p_0) * L_v << " " << Q1 << " " << p1 << " "
-                  << qArtTotal << " " << pArtTotal << " " << qVeinTotal << " " << pVeinTotal << " "
-                  << " " << Q1_out << " " << p1_out << endl;
+            dof_map.dof_indices(elem_out, dof_indices_u, u_var);
+            dof_map.dof_indices(elem_out, dof_indices_p, p_var);
+
+            double Q1_prime_out = flow_vec[dof_indices_u[0]];
+            double A1_prime_out = flow_vec[dof_indices_p[0]];
+
+            double Q1_out = Q1_prime_out * sqrt(p_0 / rho_v) * L_v * L_v;
+            double A1_out = A1_prime_out * L_v * L_v;
+
+            double p1_out = vessels[n].pext +
+                            (vessels[n].beta / (M_PI * vessels[n].r * vessels[n].r)) *
+                                (sqrt(A1_out) - sqrt(M_PI * vessels[n].r * vessels[n].r));
+
+            qArtTotal = 0.0;
+            qVeinTotal = 0.0;
+            pArtTotal = 0.0;
+            pVeinTotal = 0.0;
+            for (int i = 0; i < qArt.size(); i++)
+            {
+                qArtTotal += qArt[i];
+                qVeinTotal += qVein[i];
+
+                pArtTotal += pArt(time_itr_per)[i];
+                pVeinTotal += pVein(time_itr_per)[i];
+            }
+
+            qArtTotal *= sqrt(p_0 / rho_v) * L_v * L_v;
+            qVeinTotal *= sqrt(p_0 / rho_v) * L_v * L_v;
+
+            file_vess << ttime * sqrt(rho_v / p_0) * L_v << " " << Q1 << " " << p1 << " "
+                      << qArtTotal << " " << pArtTotal << " " << qVeinTotal << " " << pVeinTotal << " "
+                      << " " << Q1_out << " " << p1_out << endl;
+        }
+        
 
         file_vess.close();
     }
@@ -3361,8 +3370,8 @@ void VesselFlow::initialise_partvein(int rank, int np, LibMeshInit &init)
             terminal_num++;
             vessels_in[i].ter_num = terminal_num;
             vessels[i].ter_num = terminal_num;
-            if(venous_flow == 1)
-            vessels[i + vessels_in.size()].ter_num = terminal_num;
+            if (venous_flow == 1)
+                vessels[i + vessels_in.size()].ter_num = terminal_num;
         }
     }
 
