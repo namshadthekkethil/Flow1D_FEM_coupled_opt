@@ -1,3 +1,6 @@
+/******* 03/11/2022 In the optimised version intervesstype=0 is removed (we don't use the divergence theorem for the boundary terms*********/
+/**********03/11/2022 eigen_bound removed*/
+/*****03/11/2022 flow type removed. For poisuille flow (flow_type = 0) use source_codes/Flow1D_FEM_coupled ******/
 #include "VesselFlow.h"
 
 using namespace libMesh;
@@ -14,12 +17,12 @@ double VesselFlow::L_v, VesselFlow::mu_v, VesselFlow::nu_v, VesselFlow::rho_v,
     VesselFlow::p_in_const, VesselFlow::p_out_const, VesselFlow::p_ext_const;
 double VesselFlow::ttime, VesselFlow::dt_v, VesselFlow::dt, VesselFlow::ttime_dim;
 double VesselFlow::alpha_t;
-int VesselFlow::eigen_bound, VesselFlow::flow_type, VesselFlow::time_integ,
+int VesselFlow::time_integ,
     VesselFlow::time_itr, VesselFlow::inlet_bc, VesselFlow::outlet_bc, VesselFlow::time_itr_per;
 
 string VesselFlow::vessel_file_name, VesselFlow::restart_file_name, VesselFlow::partvein_file_name;
 int VesselFlow::beta_type, VesselFlow::pin_type, VesselFlow::pout_type,
-    VesselFlow::interface_type, VesselFlow::intervess_type,
+    VesselFlow::interface_type,
     VesselFlow::wave_type, VesselFlow::pext_type, VesselFlow::venous_flow, VesselFlow::st_tree;
 
 DenseVector<DenseVector<double>> VesselFlow::pLt, VesselFlow::pRt;
@@ -37,7 +40,7 @@ int VesselFlow::N_period, VesselFlow::N_total;
 
 DenseVector<double> VesselFlow::y11, VesselFlow::y12, VesselFlow::y21, VesselFlow::y22;
 
-double VesselFlow::qArtTotal,VesselFlow::qVeinTotal,VesselFlow::pArtTotal,VesselFlow::pVeinTotal;
+double VesselFlow::qArtTotal, VesselFlow::qVeinTotal, VesselFlow::pArtTotal, VesselFlow::pVeinTotal;
 
 VesselFlow::VesselFlow() {}
 
@@ -51,9 +54,7 @@ void VesselFlow::read_input()
     // GetPot infile("input_1D_Lee_2008.in");
     GetPot infile("input_1D_Lee_LV.in");
 
-    flow_type = infile("flow_type", 1);
     trans_soln = infile("trans_soln", 1);
-    eigen_bound = infile("eigen_bound", 2);
     time_integ = infile("time_integ", 2);
     inlet_bc = infile("inlet_bc", 0);
     outlet_bc = infile("outlet_bc", 0);
@@ -72,7 +73,6 @@ void VesselFlow::read_input()
     pin_type = infile("pin_type", 0);
     pout_type = infile("pout_type", 0);
     interface_type = infile("interface_type", 0);
-    intervess_type = infile("intervess_type", 0);
     wave_type = infile("wave_type", 0);
 
     pext_type = infile("pext_type", 0);
@@ -113,22 +113,6 @@ void VesselFlow::read_input()
     alpha_v = alpha_0; // alpha_0;
     gamma_v = (2.0 * M_PI * alpha_0 * nu_v * sqrt(rho_v / p_0)) /
               ((alpha_0 - 1.0) * L_v);
-
-    if (flow_type == 0)
-    {
-        trans_soln = 0;
-
-        alpha_v = 0.0;
-        gamma_v = 1.0;
-
-        intervess_type = 0;
-
-        eigen_bound = 0;
-
-        dt_v = 0.01;
-
-        wave_type = 0;
-    }
 }
 
 void VesselFlow::read_vessel_data(int rank, int np, LibMeshInit &init)
@@ -807,24 +791,14 @@ void VesselFlow::compute_jacobian(const NumericVector<Number> &,
                 for (unsigned int j = 0; j < n_u_dofs; j++)
                 {
 
-                    if (intervess_type == 0)
-                    {
-                        if (flow_type != 0)
-                            Kuu(i, j) += -alpha_t * ((2.0 * alpha_v * Q_qp) / p_qp) *
-                                         phi[j][qp] * dphi[i][qp](0) * JxW[qp];
-                    }
+                    Kuu(i, j) += alpha_t * ((2.0 * alpha_v * Q_qp) / p_qp) *
+                                 dphi[j][qp](0) * phi[i][qp] * JxW[qp];
 
-                    else if (intervess_type == 1)
-                    {
-                        Kuu(i, j) += alpha_t * ((2.0 * alpha_v * Q_qp) / p_qp) *
-                                     dphi[j][qp](0) * phi[i][qp] * JxW[qp];
+                    Kuu(i, j) += alpha_t * ((2.0 * alpha_v) / p_qp) * dQdx_qp *
+                                 phi[j][qp] * phi[i][qp] * JxW[qp];
 
-                        Kuu(i, j) += alpha_t * ((2.0 * alpha_v) / p_qp) * dQdx_qp *
-                                     phi[j][qp] * phi[i][qp] * JxW[qp];
-
-                        Kuu(i, j) += alpha_t * (-(2.0 * alpha_v * Q_qp) / p_qp) * dpdx_qp *
-                                     phi[j][qp] * phi[i][qp] * JxW[qp];
-                    }
+                    Kuu(i, j) += alpha_t * (-(2.0 * alpha_v * Q_qp) / p_qp) * dpdx_qp *
+                                 phi[j][qp] * phi[i][qp] * JxW[qp];
 
                     Kuu(i, j) += alpha_t * dsourcedQ(Q_qp, p_qp) * phi[i][qp] *
                                  phi[j][qp] * JxW[qp];
@@ -838,35 +812,22 @@ void VesselFlow::compute_jacobian(const NumericVector<Number> &,
             {
                 for (unsigned int j = 0; j < n_p_dofs; j++)
                 {
-                    if (intervess_type == 0)
-                    {
-                        if (flow_type != 0)
-                            Kup(i, j) += -alpha_t *
-                                         (-((alpha_v * Q_qp * Q_qp) / (p_qp * p_qp))) *
-                                         psi[j][qp] * dphi[i][qp](0) * JxW[qp];
 
-                        Kup(i, j) += -alpha_t * (betaV(elem_id, r_qp) * dpofA(p_qp)) *
-                                     psi[j][qp] * dphi[i][qp](0) * JxW[qp];
-                    }
+                    Kup(i, j) += alpha_t * (-((2.0 * alpha_v * Q_qp) / (p_qp * p_qp))) *
+                                 dQdx_qp * psi[j][qp] * phi[i][qp] * JxW[qp];
 
-                    else if (intervess_type == 1)
-                    {
-                        Kup(i, j) += alpha_t * (-((2.0 * alpha_v * Q_qp) / (p_qp * p_qp))) *
-                                     dQdx_qp * psi[j][qp] * phi[i][qp] * JxW[qp];
+                    Kup(i, j) +=
+                        alpha_t *
+                        (((2.0 * alpha_v * Q_qp * Q_qp) / (p_qp * p_qp * p_qp))) *
+                        dpdx_qp * psi[j][qp] * phi[i][qp] * JxW[qp];
 
-                        Kup(i, j) +=
-                            alpha_t *
-                            (((2.0 * alpha_v * Q_qp * Q_qp) / (p_qp * p_qp * p_qp))) *
-                            dpdx_qp * psi[j][qp] * phi[i][qp] * JxW[qp];
+                    Kup(i, j) += alpha_t * betaV(elem_id, r_qp) * d2pofA(p_qp) *
+                                 dpdx_qp * psi[j][qp] * phi[i][qp] * JxW[qp];
 
-                        Kup(i, j) += alpha_t * betaV(elem_id, r_qp) * d2pofA(p_qp) *
-                                     dpdx_qp * psi[j][qp] * phi[i][qp] * JxW[qp];
-
-                        Kup(i, j) += alpha_t *
-                                     (-((alpha_v * Q_qp * Q_qp) / (p_qp * p_qp)) +
-                                      betaV(elem_id, r_qp) * dpofA(p_qp)) *
-                                     dpsi[j][qp](0) * phi[i][qp] * JxW[qp];
-                    }
+                    Kup(i, j) += alpha_t *
+                                 (-((alpha_v * Q_qp * Q_qp) / (p_qp * p_qp)) +
+                                  betaV(elem_id, r_qp) * dpofA(p_qp)) *
+                                 dpsi[j][qp](0) * phi[i][qp] * JxW[qp];
 
                     Kup(i, j) += alpha_t * dsourcedp(Q_qp, p_qp) * psi[j][qp] *
                                  phi[i][qp] * JxW[qp];
@@ -876,15 +837,7 @@ void VesselFlow::compute_jacobian(const NumericVector<Number> &,
             for (unsigned int i = 0; i < n_p_dofs; i++)
                 for (unsigned int j = 0; j < n_u_dofs; j++)
                 {
-                    if (intervess_type == 0)
-                    {
-                        Kpu(i, j) += -alpha_t * JxW[qp] * phi[j][qp] * dpsi[i][qp](0);
-                    }
-
-                    else if (intervess_type == 1)
-                    {
-                        Kpu(i, j) += alpha_t * JxW[qp] * dphi[j][qp](0) * psi[i][qp];
-                    }
+                    Kpu(i, j) += alpha_t * JxW[qp] * dphi[j][qp](0) * psi[i][qp];
                 }
 
             for (unsigned int i = 0; i < n_p_dofs; i++)
@@ -962,571 +915,179 @@ void VesselFlow::compute_jacobian(const NumericVector<Number> &,
             }
         }
 
-        if (eigen_bound == 2)
+        double A_new = 0.0;
+        double A_old = 0.0;
+        double A_n1 = 0.0;
+        double dAdt_b = 0.0;
+
+        double Q_b = 0.0;
+        double p_b = 0.0;
+
+        double r_b = 0.0;
+
+        double const_1 = 0.0;
+        double const_2 = 0.0;
+
+        double dconst_1_dQ = 0.0;
+        double dconst_2_dQ = 0.0;
+
+        double dconst_1_dp = 0.0;
+        double dconst_2_dp = 0.0;
+
+        if ((vessels[elem_id].ter == -1) || (vessels[elem_id].ter == 3)) // inlet
         {
+            A_new = system.current_solution(dof_indices_p[0]);
+            A_old = system_old.current_solution(dof_indices_p[0]);
+            A_n1 = system_n1.current_solution(dof_indices_p[0]);
+            dAdt_b = timeDer(A_new, A_old, A_n1); // dAInletdt(ttime);
 
-            double A_new = 0.0;
-            double A_old = 0.0;
-            double A_n1 = 0.0;
-            double dAdt_b = 0.0;
+            Q_b = system.current_solution(dof_indices_u[0]);
+            p_b = A_new; // AInlet(ttime);
+            r_b = vessels[elem_id].r1;
+        }
 
-            double Q_b = 0.0;
-            double p_b = 0.0;
+        else if ((vessels[elem_id].ter == 1) ||
+                 (vessels[elem_id].ter == 2)) // outlet
+        {
+            A_new = system.current_solution(dof_indices_p[1]);
+            A_old = system_old.current_solution(dof_indices_p[1]);
+            A_n1 = system_n1.current_solution(dof_indices_p[1]);
+            dAdt_b = timeDer(A_new, A_old, A_n1); // dAInletdt(ttime);
 
-            double r_b = 0.0;
+            Q_b = system.current_solution(dof_indices_u[1]);
+            p_b = A_new; // AOutlet(ttime);
+            r_b = vessels[elem_id].r2;
+        }
 
-            double const_1 = 0.0;
-            double const_2 = 0.0;
+        if ((vessels[elem_id].ter == -1) || (vessels[elem_id].ter == 1) ||
+            (vessels[elem_id].ter == 3) || (vessels[elem_id].ter == 2))
+        {
+            double const_a = -alpha_v * (Q_b / p_b);
+            // double const_b =
+            //     sqrt(((Q_b * Q_b * alpha_v * (alpha_v - 1.0)) / (p_b * p_b)) +
+            //          betaPr(elem_id, r_b) * (sqrt(p_b) / (2.0 * rho_v *
+            //          A0_in)));
 
-            double dconst_1_dQ = 0.0;
-            double dconst_2_dQ = 0.0;
+            double const_b = 0.0;
 
-            double dconst_1_dp = 0.0;
-            double dconst_2_dp = 0.0;
+            if (wave_type == 0)
+                const_b =
+                    sqrt(((Q_b * Q_b * alpha_v * (alpha_v - 1.0)) / (p_b * p_b)) +
+                         betaPr(elem_id, r_b));
+            else if (wave_type == 1)
+                const_b =
+                    sqrt(((Q_b * Q_b * alpha_v * (alpha_v - 1.0)) / (p_b * p_b)) +
+                         betaPr(elem_id, r_b) * sqrt(p_b));
 
-            if ((vessels[elem_id].ter == -1) || (vessels[elem_id].ter == 3)) // inlet
+            const_1 = const_a + const_b;
+            const_2 = const_a - const_b;
+
+            double dconst_a_dQ = -(alpha_v / p_b);
+            double dconst_a_dp = ((alpha_v * Q_b) / (p_b * p_b));
+
+            double dconst_b_dQ =
+                (0.5 / const_b) *
+                ((2.0 * Q_b * alpha_v * (alpha_v - 1.0)) / (p_b * p_b));
+            // double dconst_b_dp =
+            //     (0.5 / const_b) *
+            //     ((-(2.0 * Q_b * Q_b * alpha_v * (alpha_v - 1.0)) /
+            //       (p_b * p_b * p_b)) +
+            //      (betaPr(elem_id, r_b) / (4.0 * rho_v * A0_in)) * pow(p_b,
+            //      -0.5));
+
+            double dconst_b_dp = 0.0;
+
+            if (wave_type == 0)
+                dconst_b_dp = (0.5 / const_b) *
+                              ((-(2.0 * Q_b * Q_b * alpha_v * (alpha_v - 1.0)) /
+                                (p_b * p_b * p_b)));
+            else if (wave_type == 1)
+                dconst_b_dp = (0.5 / const_b) *
+                              ((-(2.0 * Q_b * Q_b * alpha_v * (alpha_v - 1.0)) /
+                                (p_b * p_b * p_b)) +
+                               (betaPr(elem_id, r_b) / (2.0 * sqrt(p_b))));
+
+            dconst_1_dQ = dconst_a_dQ + dconst_b_dQ;
+            dconst_1_dp = dconst_a_dp + dconst_b_dp;
+
+            dconst_2_dQ = dconst_a_dQ - dconst_b_dQ;
+            dconst_2_dp = dconst_a_dp - dconst_b_dp;
+        }
+
+        if ((vessels[elem_id].ter == -1)) // inlet
+        {
+            unsigned int side = 0;
+            fe_face->reinit(elem, side);
+            fe_face_p->reinit(elem, side);
+
+            double dQdx_b = 0.0;
+            double dpdx_b = 0.0;
+
+            for (unsigned int i = 0; i < n_u_dofs; i++)
             {
-                A_new = system.current_solution(dof_indices_p[0]);
-                A_old = system_old.current_solution(dof_indices_p[0]);
-                A_n1 = system_n1.current_solution(dof_indices_p[0]);
-                dAdt_b = timeDer(A_new, A_old, A_n1); // dAInletdt(ttime);
-
-                Q_b = system.current_solution(dof_indices_u[0]);
-                p_b = A_new; // AInlet(ttime);
-                r_b = vessels[elem_id].r1;
+                dQdx_b +=
+                    dphi_face[i][0](0) * system.current_solution(dof_indices_u[i]);
             }
 
-            else if ((vessels[elem_id].ter == 1) ||
-                     (vessels[elem_id].ter == 2)) // outlet
+            for (unsigned int i = 0; i < n_p_dofs; i++)
             {
-                A_new = system.current_solution(dof_indices_p[1]);
-                A_old = system_old.current_solution(dof_indices_p[1]);
-                A_n1 = system_n1.current_solution(dof_indices_p[1]);
-                dAdt_b = timeDer(A_new, A_old, A_n1); // dAInletdt(ttime);
-
-                Q_b = system.current_solution(dof_indices_u[1]);
-                p_b = A_new; // AOutlet(ttime);
-                r_b = vessels[elem_id].r2;
+                dpdx_b +=
+                    dphi_face_p[i][0](0) * system.current_solution(dof_indices_p[i]);
             }
 
-            if ((vessels[elem_id].ter == -1) || (vessels[elem_id].ter == 1) ||
-                (vessels[elem_id].ter == 3) || (vessels[elem_id].ter == 2))
+            for (unsigned int j = 0; j < n_u_dofs; j++)
             {
-                double const_a = -alpha_v * (Q_b / p_b);
-                // double const_b =
-                //     sqrt(((Q_b * Q_b * alpha_v * (alpha_v - 1.0)) / (p_b * p_b)) +
-                //          betaPr(elem_id, r_b) * (sqrt(p_b) / (2.0 * rho_v *
-                //          A0_in)));
-
-                double const_b = 0.0;
-
-                if (wave_type == 0)
-                    const_b =
-                        sqrt(((Q_b * Q_b * alpha_v * (alpha_v - 1.0)) / (p_b * p_b)) +
-                             betaPr(elem_id, r_b));
-                else if (wave_type == 1)
-                    const_b =
-                        sqrt(((Q_b * Q_b * alpha_v * (alpha_v - 1.0)) / (p_b * p_b)) +
-                             betaPr(elem_id, r_b) * sqrt(p_b));
-
-                const_1 = const_a + const_b;
-                const_2 = const_a - const_b;
-
-                double dconst_a_dQ = -(alpha_v / p_b);
-                double dconst_a_dp = ((alpha_v * Q_b) / (p_b * p_b));
-
-                double dconst_b_dQ =
-                    (0.5 / const_b) *
-                    ((2.0 * Q_b * alpha_v * (alpha_v - 1.0)) / (p_b * p_b));
-                // double dconst_b_dp =
-                //     (0.5 / const_b) *
-                //     ((-(2.0 * Q_b * Q_b * alpha_v * (alpha_v - 1.0)) /
-                //       (p_b * p_b * p_b)) +
-                //      (betaPr(elem_id, r_b) / (4.0 * rho_v * A0_in)) * pow(p_b,
-                //      -0.5));
-
-                double dconst_b_dp = 0.0;
-
-                if (wave_type == 0)
-                    dconst_b_dp = (0.5 / const_b) *
-                                  ((-(2.0 * Q_b * Q_b * alpha_v * (alpha_v - 1.0)) /
-                                    (p_b * p_b * p_b)));
-                else if (wave_type == 1)
-                    dconst_b_dp = (0.5 / const_b) *
-                                  ((-(2.0 * Q_b * Q_b * alpha_v * (alpha_v - 1.0)) /
-                                    (p_b * p_b * p_b)) +
-                                   (betaPr(elem_id, r_b) / (2.0 * sqrt(p_b))));
-
-                dconst_1_dQ = dconst_a_dQ + dconst_b_dQ;
-                dconst_1_dp = dconst_a_dp + dconst_b_dp;
-
-                dconst_2_dQ = dconst_a_dQ - dconst_b_dQ;
-                dconst_2_dp = dconst_a_dp - dconst_b_dp;
+                Kuu(0, j) = 0.0;
             }
 
-            if ((vessels[elem_id].ter == -1)) // inlet
+            for (unsigned int j = 0; j < n_p_dofs; j++)
             {
-                unsigned int side = 0;
-                fe_face->reinit(elem, side);
-                fe_face_p->reinit(elem, side);
+                Kup(0, j) = 0.0;
+            }
 
-                double dQdx_b = 0.0;
-                double dpdx_b = 0.0;
+            for (unsigned int j = 0; j < n_u_dofs; j++)
+            {
+                Kuu(0, j) += const_2 * dphi_face[j][0](0);
+                Kuu(0, j) += ((2.0 * alpha_v * Q_b) / p_b) * dphi_face[j][0](0);
+            }
 
-                for (unsigned int i = 0; i < n_u_dofs; i++)
-                {
-                    dQdx_b +=
-                        dphi_face[i][0](0) * system.current_solution(dof_indices_u[i]);
-                }
+            Kuu(0, 0) += DtimeDer();
+            Kuu(0, 0) += ((2.0 * alpha_v) / p_b) * dQdx_b;
+            Kuu(0, 0) += (-(2.0 * alpha_v * Q_b) / (p_b * p_b)) * dpdx_b;
+            Kuu(0, 0) += gamma_v / p_b;
+            Kuu(0, 0) += dconst_2_dQ * (dAdt_b + dQdx_b);
 
-                for (unsigned int i = 0; i < n_p_dofs; i++)
-                {
-                    dpdx_b +=
-                        dphi_face_p[i][0](0) * system.current_solution(dof_indices_p[i]);
-                }
+            for (unsigned int j = 0; j < n_p_dofs; j++)
+            {
+                Kup(0, j) += (-((alpha_v * Q_b * Q_b) / (p_b * p_b)) +
+                              betaV(elem_id, r_b) * dpofA(p_b)) *
+                             dphi_face_p[j][0](0);
+            }
 
+            Kup(0, 0) += const_2 * DtimeDer();
+            Kup(0, 0) += -((2.0 * alpha_v * Q_b) / (p_b * p_b)) * dQdx_b;
+            Kup(0, 0) +=
+                (((2.0 * alpha_v * Q_b * Q_b) / (p_b * p_b * p_b))) * dpdx_b;
+            Kup(0, 0) += betaV(elem_id, r_b) * d2pofA(p_b) * dpdx_b;
+            Kup(0, 0) += -gamma_v * (Q_b / (p_b * p_b));
+            Kup(0, 0) += dconst_2_dp * (dAdt_b + dQdx_b);
+
+            if (inlet_bc == 0)
+            {
                 for (unsigned int j = 0; j < n_u_dofs; j++)
                 {
-                    Kuu(0, j) = 0.0;
+                    Kpu(0, j) = 0.0;
                 }
 
                 for (unsigned int j = 0; j < n_p_dofs; j++)
                 {
-                    Kup(0, j) = 0.0;
+                    Kpp(0, j) = 0.0;
                 }
-
-                for (unsigned int j = 0; j < n_u_dofs; j++)
-                {
-                    Kuu(0, j) += const_2 * dphi_face[j][0](0);
-                    Kuu(0, j) += ((2.0 * alpha_v * Q_b) / p_b) * dphi_face[j][0](0);
-                }
-
-                Kuu(0, 0) += DtimeDer();
-                Kuu(0, 0) += ((2.0 * alpha_v) / p_b) * dQdx_b;
-                Kuu(0, 0) += (-(2.0 * alpha_v * Q_b) / (p_b * p_b)) * dpdx_b;
-                Kuu(0, 0) += gamma_v / p_b;
-                Kuu(0, 0) += dconst_2_dQ * (dAdt_b + dQdx_b);
-
-                for (unsigned int j = 0; j < n_p_dofs; j++)
-                {
-                    Kup(0, j) += (-((alpha_v * Q_b * Q_b) / (p_b * p_b)) +
-                                  betaV(elem_id, r_b) * dpofA(p_b)) *
-                                 dphi_face_p[j][0](0);
-                }
-
-                Kup(0, 0) += const_2 * DtimeDer();
-                Kup(0, 0) += -((2.0 * alpha_v * Q_b) / (p_b * p_b)) * dQdx_b;
-                Kup(0, 0) +=
-                    (((2.0 * alpha_v * Q_b * Q_b) / (p_b * p_b * p_b))) * dpdx_b;
-                Kup(0, 0) += betaV(elem_id, r_b) * d2pofA(p_b) * dpdx_b;
-                Kup(0, 0) += -gamma_v * (Q_b / (p_b * p_b));
-                Kup(0, 0) += dconst_2_dp * (dAdt_b + dQdx_b);
-
-                if (inlet_bc == 0)
-                {
-                    for (unsigned int j = 0; j < n_u_dofs; j++)
-                    {
-                        Kpu(0, j) = 0.0;
-                    }
-
-                    for (unsigned int j = 0; j < n_p_dofs; j++)
-                    {
-                        Kpp(0, j) = 0.0;
-                    }
-                    Kpp(0, 0) = 1.0;
-                }
-
-                else if (inlet_bc == 1)
-                {
-                    for (unsigned int j = 0; j < n_u_dofs; j++)
-                    {
-                        Kpu(0, j) = 0.0;
-                    }
-
-                    for (unsigned int j = 0; j < n_p_dofs; j++)
-                    {
-                        Kpp(0, j) = 0.0;
-                    }
-
-                    Kpp(0, 0) += const_1 * DtimeDer();
-
-                    Kpu(0, 0) += DtimeDer();
-                    Kpu(0, 0) += gamma_v * (1.0 / p_b);
-
-                    Kpu(0, 0) += dconst_1_dQ * dAdt_b;
-                }
+                Kpp(0, 0) = 1.0;
             }
 
-            else if ((vessels[elem_id].ter == 1)) // outlet
+            else if (inlet_bc == 1)
             {
-                if (venous_flow == 0)
-                {
-                    fe_face->reinit(elem, 1);
-                    fe_face_p->reinit(elem, 1);
-
-                    double dQdx_b = 0.0;
-                    double dpdx_b = 0.0;
-
-                    for (unsigned int i = 0; i < n_u_dofs; i++)
-                    {
-                        dQdx_b +=
-                            dphi_face[i][0](0) * system.current_solution(dof_indices_u[i]);
-                    }
-
-                    for (unsigned int i = 0; i < n_p_dofs; i++)
-                    {
-                        dpdx_b +=
-                            dphi_face_p[i][0](0) * system.current_solution(dof_indices_p[i]);
-                    }
-
-                    for (unsigned int j = 0; j < n_u_dofs; j++)
-                    {
-                        Kuu(1, j) = 0.0;
-                    }
-
-                    for (unsigned int j = 0; j < n_p_dofs; j++)
-                    {
-                        Kup(1, j) = 0.0;
-                    }
-
-                    for (unsigned int j = 0; j < n_u_dofs; j++)
-                    {
-                        Kuu(1, j) += const_1 * dphi_face[j][0](0);
-                        Kuu(1, j) += ((2.0 * alpha_v * Q_b) / p_b) * dphi_face[j][0](0);
-                    }
-
-                    Kuu(1, 1) += DtimeDer();
-                    Kuu(1, 1) += ((2.0 * alpha_v) / p_b) * dQdx_b;
-                    Kuu(1, 1) += (-(2.0 * alpha_v * Q_b) / (p_b * p_b)) * dpdx_b;
-                    Kuu(1, 1) += gamma_v / p_b;
-                    Kuu(1, 1) += dconst_1_dQ * (dAdt_b + dQdx_b);
-
-                    for (unsigned int j = 0; j < n_p_dofs; j++)
-                    {
-                        Kup(1, j) += (-((alpha_v * Q_b * Q_b) / (p_b * p_b)) +
-                                      betaV(elem_id, r_b) * dpofA(p_b)) *
-                                     dphi_face_p[j][0](0);
-                    }
-
-                    Kup(1, 1) += const_1 * DtimeDer();
-                    Kup(1, 1) += -((2.0 * alpha_v * Q_b) / (p_b * p_b)) * dQdx_b;
-                    Kup(1, 1) +=
-                        (((2.0 * alpha_v * Q_b * Q_b) / (p_b * p_b * p_b))) * dpdx_b;
-                    Kup(1, 1) += betaV(elem_id, r_b) * d2pofA(p_b) * dpdx_b;
-                    Kup(1, 1) += -gamma_v * (Q_b / (p_b * p_b));
-                    Kup(1, 1) += dconst_1_dp * (dAdt_b + dQdx_b);
-
-                    if (outlet_bc == 0)
-                    {
-                        for (unsigned int j = 0; j < n_u_dofs; j++)
-                        {
-                            Kpu(1, j) = 0.0;
-                        }
-
-                        for (unsigned int j = 0; j < n_p_dofs; j++)
-                        {
-                            Kpp(1, j) = 0.0;
-                        }
-                        Kpp(1, 1) = 1.0;
-                    }
-
-                    else if (outlet_bc == 1)
-                    {
-                        for (unsigned int j = 0; j < n_u_dofs; j++)
-                        {
-                            Kpu(1, j) = 0.0;
-                        }
-
-                        for (unsigned int j = 0; j < n_p_dofs; j++)
-                        {
-                            Kpp(1, j) = 0.0;
-                        }
-
-                        Kpp(1, 1) += const_2 * DtimeDer();
-
-                        Kpu(1, 1) += DtimeDer();
-                        Kpu(1, 1) += gamma_v * (1.0 / p_b);
-
-                        Kpu(1, 1) += dconst_2_dQ * dAdt_b;
-                    }
-
-                    else if (outlet_bc == 2)
-                    {
-                        for (unsigned int j = 0; j < n_u_dofs; j++)
-                        {
-                            Kpu(1, j) = 0.0;
-                        }
-
-                        for (unsigned int j = 0; j < n_p_dofs; j++)
-                        {
-                            Kpp(1, j) = 0.0;
-                        }
-
-                        double A0_cur = M_PI * pow(vessels[elem_id].r, 2);
-                        double A0bybeta = A0_cur / vessels[elem_id].beta;
-
-                        double sqrt_At_cur =
-                            sqrt(A0_cur) +
-                            A0bybeta * (PDrain(ttime) +
-                                        sqrt(p_0 / rho_v) * ((L_v * L_v) / gamma_perm) *
-                                            system.current_solution(dof_indices_u[1]));
-
-                        Kpp(1, 1) = 1.0;
-                        Kpu(1, 1) = -2.0 * sqrt_At_cur * A0bybeta * sqrt(p_0 / rho_v) *
-                                    ((L_v * L_v) / gamma_perm);
-                    }
-                }
-                else if (venous_flow == 1)
-                {
-                    if (elem_id < vessels_in.size())
-                    {
-                        fe_face->reinit(elem, 1);
-                        fe_face_p->reinit(elem, 1);
-
-                        double dQdx_b = 0.0;
-                        double dpdx_b = 0.0;
-
-                        for (unsigned int i = 0; i < n_u_dofs; i++)
-                        {
-                            dQdx_b +=
-                                dphi_face[i][0](0) * system.current_solution(dof_indices_u[i]);
-                        }
-
-                        for (unsigned int i = 0; i < n_p_dofs; i++)
-                        {
-                            dpdx_b +=
-                                dphi_face_p[i][0](0) * system.current_solution(dof_indices_p[i]);
-                        }
-
-                        for (unsigned int j = 0; j < n_u_dofs; j++)
-                        {
-                            Kuu(1, j) = 0.0;
-                        }
-
-                        for (unsigned int j = 0; j < n_p_dofs; j++)
-                        {
-                            Kup(1, j) = 0.0;
-                        }
-
-                        for (unsigned int j = 0; j < n_u_dofs; j++)
-                        {
-                            Kuu(1, j) += const_1 * dphi_face[j][0](0);
-                            Kuu(1, j) += ((2.0 * alpha_v * Q_b) / p_b) * dphi_face[j][0](0);
-                        }
-
-                        Kuu(1, 1) += DtimeDer();
-                        Kuu(1, 1) += ((2.0 * alpha_v) / p_b) * dQdx_b;
-                        Kuu(1, 1) += (-(2.0 * alpha_v * Q_b) / (p_b * p_b)) * dpdx_b;
-                        Kuu(1, 1) += gamma_v / p_b;
-                        Kuu(1, 1) += dconst_1_dQ * (dAdt_b + dQdx_b);
-
-                        for (unsigned int j = 0; j < n_p_dofs; j++)
-                        {
-                            Kup(1, j) += (-((alpha_v * Q_b * Q_b) / (p_b * p_b)) +
-                                          betaV(elem_id, r_b) * dpofA(p_b)) *
-                                         dphi_face_p[j][0](0);
-                        }
-
-                        Kup(1, 1) += const_1 * DtimeDer();
-                        Kup(1, 1) += -((2.0 * alpha_v * Q_b) / (p_b * p_b)) * dQdx_b;
-                        Kup(1, 1) +=
-                            (((2.0 * alpha_v * Q_b * Q_b) / (p_b * p_b * p_b))) * dpdx_b;
-                        Kup(1, 1) += betaV(elem_id, r_b) * d2pofA(p_b) * dpdx_b;
-                        Kup(1, 1) += -gamma_v * (Q_b / (p_b * p_b));
-                        Kup(1, 1) += dconst_1_dp * (dAdt_b + dQdx_b);
-
-                        for (unsigned int j = 0; j < n_u_dofs; j++)
-                        {
-                            Kpu(1, j) = 0.0;
-                        }
-
-                        for (unsigned int j = 0; j < n_p_dofs; j++)
-                        {
-                            Kpp(1, j) = 0.0;
-                        }
-
-                        if (st_tree == 0)
-                        {
-                            Kpu(1, 1) = 1.0;
-                            Kpunout(1, 1) = 1.0;
-                        }
-                        else if (st_tree == 1)
-                        {
-                            Kpu(1, 1) = 1.0;
-                        }
-                    }
-                    else
-                    {
-                        fe_face->reinit(elem, 1);
-                        fe_face_p->reinit(elem, 1);
-
-                        double dQdx_b = 0.0;
-                        double dpdx_b = 0.0;
-
-                        for (unsigned int i = 0; i < n_u_dofs; i++)
-                        {
-                            dQdx_b +=
-                                dphi_face[i][0](0) * system.current_solution(dof_indices_u[i]);
-                        }
-
-                        for (unsigned int i = 0; i < n_p_dofs; i++)
-                        {
-                            dpdx_b +=
-                                dphi_face_p[i][0](0) * system.current_solution(dof_indices_p[i]);
-                        }
-
-                        for (unsigned int j = 0; j < n_u_dofs; j++)
-                        {
-                            Kuu(1, j) = 0.0;
-                        }
-
-                        for (unsigned int j = 0; j < n_p_dofs; j++)
-                        {
-                            Kup(1, j) = 0.0;
-                        }
-
-                        for (unsigned int j = 0; j < n_u_dofs; j++)
-                        {
-                            Kuu(1, j) += const_2 * dphi_face[j][0](0);
-                            Kuu(1, j) += ((2.0 * alpha_v * Q_b) / p_b) * dphi_face[j][0](0);
-                        }
-
-                        Kuu(1, 1) += DtimeDer();
-                        Kuu(1, 1) += ((2.0 * alpha_v) / p_b) * dQdx_b;
-                        Kuu(1, 1) += (-(2.0 * alpha_v * Q_b) / (p_b * p_b)) * dpdx_b;
-                        Kuu(1, 1) += gamma_v / p_b;
-                        Kuu(1, 1) += dconst_2_dQ * (dAdt_b + dQdx_b);
-
-                        for (unsigned int j = 0; j < n_p_dofs; j++)
-                        {
-                            Kup(1, j) += (-((alpha_v * Q_b * Q_b) / (p_b * p_b)) +
-                                          betaV(elem_id, r_b) * dpofA(p_b)) *
-                                         dphi_face_p[j][0](0);
-                        }
-
-                        Kup(1, 1) += const_2 * DtimeDer();
-                        Kup(1, 1) += -((2.0 * alpha_v * Q_b) / (p_b * p_b)) * dQdx_b;
-                        Kup(1, 1) +=
-                            (((2.0 * alpha_v * Q_b * Q_b) / (p_b * p_b * p_b))) * dpdx_b;
-                        Kup(1, 1) += betaV(elem_id, r_b) * d2pofA(p_b) * dpdx_b;
-                        Kup(1, 1) += -gamma_v * (Q_b / (p_b * p_b));
-                        Kup(1, 1) += dconst_2_dp * (dAdt_b + dQdx_b);
-
-                        double A_n = flow_vec[dof_indices_neighbor_out_p[1]];
-                        double A_n0 = M_PI * pow(vessels[elem_id_n_out].r, 2);
-                        double A0_b = M_PI * pow(vessels[elem_id].r, 2);
-
-                        double Q_n = flow_vec[dof_indices_neighbor_out_u[1]];
-
-                        for (unsigned int j = 0; j < n_u_dofs; j++)
-                        {
-                            Kpu(1, j) = 0.0;
-                        }
-
-                        for (unsigned int j = 0; j < n_p_dofs; j++)
-                        {
-                            Kpp(1, j) = 0.0;
-                        }
-
-                        if (st_tree == 0)
-                        {
-                            if (interface_type == 0)
-                            {
-                                Kpp(1, 1) += ((vessels[elem_id].beta / A0_b) /
-                                              ((vessels[0].beta / (M_PI * pow(vessels[0].r, 2))))) *
-                                             (0.5 / sqrt(A_new));
-                                Kppnout(1, 1) -= ((vessels[elem_id_n_out].beta / A_n0) /
-                                                  ((vessels[0].beta / (M_PI * pow(vessels[0].r, 2))))) *
-                                                 (0.5 / sqrt(A_n));
-                            }
-
-                            else if (interface_type == 1)
-                            {
-                                Kpp(1, 1) += (vessels[elem_id].beta / A0_b) * (0.5 / sqrt(A_new));
-                                Kpp(1, 1) += -rho_v * (pow(Q_b, 2) / pow(A_new, 3));
-                                Kpu(1, 1) += rho_v * (Q_b / pow(A_new, 2));
-
-                                Kppnout(1, 1) -= (vessels[elem_id_n_out].beta / A_n0) * (0.5 / sqrt(A_n));
-                                Kppn(1, 1) -= -rho_v * (pow(Q_n, 2) / pow(A_n, 3));
-                                Kpunout(1, 1) -= rho_v * (Q_n / pow(A_n, 2));
-                            }
-                        }
-                        else if (st_tree == 1)
-                        {
-                            Kpu(1, 1) = 1.0;
-                        }
-                    }
-                }
-            }
-
-            else if ((vessels[elem_id].ter == 3)) // inlet
-            {
-                unsigned int side = 0;
-                fe_face->reinit(elem, side);
-                fe_face_p->reinit(elem, side);
-
-                double dQdx_b = 0.0;
-                double dpdx_b = 0.0;
-
-                for (unsigned int i = 0; i < n_u_dofs; i++)
-                {
-                    dQdx_b +=
-                        dphi_face[i][0](0) * system.current_solution(dof_indices_u[i]);
-                }
-
-                for (unsigned int i = 0; i < n_p_dofs; i++)
-                {
-                    dpdx_b +=
-                        dphi_face_p[i][0](0) * system.current_solution(dof_indices_p[i]);
-                }
-
-                for (unsigned int j = 0; j < n_u_dofs; j++)
-                {
-                    Kuu(0, j) = 0.0;
-                }
-
-                for (unsigned int j = 0; j < n_p_dofs; j++)
-                {
-                    Kup(0, j) = 0.0;
-                }
-
-                for (unsigned int j = 0; j < n_u_dofs; j++)
-                {
-                    Kuu(0, j) += const_2 * dphi_face[j][0](0);
-                    Kuu(0, j) += ((2.0 * alpha_v * Q_b) / p_b) * dphi_face[j][0](0);
-                }
-
-                Kuu(0, 0) += DtimeDer();
-                Kuu(0, 0) += ((2.0 * alpha_v) / p_b) * dQdx_b;
-                Kuu(0, 0) += (-(2.0 * alpha_v * Q_b) / (p_b * p_b)) * dpdx_b;
-                Kuu(0, 0) += gamma_v / p_b;
-                Kuu(0, 0) += dconst_2_dQ * (dAdt_b + dQdx_b);
-
-                for (unsigned int j = 0; j < n_p_dofs; j++)
-                {
-                    Kup(0, j) += (-((alpha_v * Q_b * Q_b) / (p_b * p_b)) +
-                                  betaV(elem_id, r_b) * dpofA(p_b)) *
-                                 dphi_face_p[j][0](0);
-                }
-
-                Kup(0, 0) += const_2 * DtimeDer();
-                Kup(0, 0) += -((2.0 * alpha_v * Q_b) / (p_b * p_b)) * dQdx_b;
-                Kup(0, 0) +=
-                    (((2.0 * alpha_v * Q_b * Q_b) / (p_b * p_b * p_b))) * dpdx_b;
-                Kup(0, 0) += betaV(elem_id, r_b) * d2pofA(p_b) * dpdx_b;
-                Kup(0, 0) += -gamma_v * (Q_b / (p_b * p_b));
-                Kup(0, 0) += dconst_2_dp * (dAdt_b + dQdx_b);
-
-                double A_n = flow_vec
-                    [dof_indices_neighbor_p
-                         [1]]; // system.current_solution(dof_indices_neighbor_p[1]);
-                double A_n0 = M_PI * pow(vessels[elem_id_n].r, 2);
-                double A0_b = M_PI * pow(vessels[elem_id].r, 2);
-
-                double Q_n = flow_vec
-                    [dof_indices_neighbor_u
-                         [1]]; // system.current_solution(dof_indices_neighbor_u[1]);
-
                 for (unsigned int j = 0; j < n_u_dofs; j++)
                 {
                     Kpu(0, j) = 0.0;
@@ -1537,29 +1098,18 @@ void VesselFlow::compute_jacobian(const NumericVector<Number> &,
                     Kpp(0, j) = 0.0;
                 }
 
-                if (interface_type == 0)
-                {
-                    Kpp(0, 0) += ((vessels[elem_id].beta / A0_b) /
-                                  ((vessels[0].beta / (M_PI * pow(vessels[0].r, 2))))) *
-                                 (0.5 / sqrt(A_new));
-                    Kppn(0, 1) -= ((vessels[elem_id_n].beta / A_n0) /
-                                   ((vessels[0].beta / (M_PI * pow(vessels[0].r, 2))))) *
-                                  (0.5 / sqrt(A_n));
-                }
+                Kpp(0, 0) += const_1 * DtimeDer();
 
-                else if (interface_type == 1)
-                {
-                    Kpp(0, 0) += (vessels[elem_id].beta / A0_b) * (0.5 / sqrt(A_new));
-                    Kpp(0, 0) += -rho_v * (pow(Q_b, 2) / pow(A_new, 3));
-                    Kpu(0, 0) += rho_v * (Q_b / pow(A_new, 2));
+                Kpu(0, 0) += DtimeDer();
+                Kpu(0, 0) += gamma_v * (1.0 / p_b);
 
-                    Kppn(0, 1) -= (vessels[elem_id_n].beta / A_n0) * (0.5 / sqrt(A_n));
-                    Kppn(0, 1) -= -rho_v * (pow(Q_n, 2) / pow(A_n, 3));
-                    Kpun(0, 1) -= rho_v * (Q_n / pow(A_n, 2));
-                }
+                Kpu(0, 0) += dconst_1_dQ * dAdt_b;
             }
+        }
 
-            else if ((vessels[elem_id].ter == 2)) // outlet
+        else if ((vessels[elem_id].ter == 1)) // outlet
+        {
+            if (venous_flow == 0)
             {
                 fe_face->reinit(elem, 1);
                 fe_face_p->reinit(elem, 1);
@@ -1616,205 +1166,418 @@ void VesselFlow::compute_jacobian(const NumericVector<Number> &,
                 Kup(1, 1) += -gamma_v * (Q_b / (p_b * p_b));
                 Kup(1, 1) += dconst_1_dp * (dAdt_b + dQdx_b);
 
-                for (unsigned int j = 0; j < n_u_dofs; j++)
+                if (outlet_bc == 0)
                 {
-                    Kpu(1, j) = 0.0;
+                    for (unsigned int j = 0; j < n_u_dofs; j++)
+                    {
+                        Kpu(1, j) = 0.0;
+                    }
+
+                    for (unsigned int j = 0; j < n_p_dofs; j++)
+                    {
+                        Kpp(1, j) = 0.0;
+                    }
+                    Kpp(1, 1) = 1.0;
                 }
 
-                for (unsigned int j = 0; j < n_p_dofs; j++)
+                else if (outlet_bc == 1)
                 {
-                    Kpp(1, j) = 0.0;
+                    for (unsigned int j = 0; j < n_u_dofs; j++)
+                    {
+                        Kpu(1, j) = 0.0;
+                    }
+
+                    for (unsigned int j = 0; j < n_p_dofs; j++)
+                    {
+                        Kpp(1, j) = 0.0;
+                    }
+
+                    Kpp(1, 1) += const_2 * DtimeDer();
+
+                    Kpu(1, 1) += DtimeDer();
+                    Kpu(1, 1) += gamma_v * (1.0 / p_b);
+
+                    Kpu(1, 1) += dconst_2_dQ * dAdt_b;
                 }
-                Kpu(1, 1) = 1.0;
-                Kpun1(1, 0) = -1.0;
-                Kpun2(1, 0) = -1.0;
+
+                else if (outlet_bc == 2)
+                {
+                    for (unsigned int j = 0; j < n_u_dofs; j++)
+                    {
+                        Kpu(1, j) = 0.0;
+                    }
+
+                    for (unsigned int j = 0; j < n_p_dofs; j++)
+                    {
+                        Kpp(1, j) = 0.0;
+                    }
+
+                    double A0_cur = M_PI * pow(vessels[elem_id].r, 2);
+                    double A0bybeta = A0_cur / vessels[elem_id].beta;
+
+                    double sqrt_At_cur =
+                        sqrt(A0_cur) +
+                        A0bybeta * (PDrain(ttime) +
+                                    sqrt(p_0 / rho_v) * ((L_v * L_v) / gamma_perm) *
+                                        system.current_solution(dof_indices_u[1]));
+
+                    Kpp(1, 1) = 1.0;
+                    Kpu(1, 1) = -2.0 * sqrt_At_cur * A0bybeta * sqrt(p_0 / rho_v) *
+                                ((L_v * L_v) / gamma_perm);
+                }
+            }
+            else if (venous_flow == 1)
+            {
+                if (elem_id < vessels_in.size())
+                {
+                    fe_face->reinit(elem, 1);
+                    fe_face_p->reinit(elem, 1);
+
+                    double dQdx_b = 0.0;
+                    double dpdx_b = 0.0;
+
+                    for (unsigned int i = 0; i < n_u_dofs; i++)
+                    {
+                        dQdx_b +=
+                            dphi_face[i][0](0) * system.current_solution(dof_indices_u[i]);
+                    }
+
+                    for (unsigned int i = 0; i < n_p_dofs; i++)
+                    {
+                        dpdx_b +=
+                            dphi_face_p[i][0](0) * system.current_solution(dof_indices_p[i]);
+                    }
+
+                    for (unsigned int j = 0; j < n_u_dofs; j++)
+                    {
+                        Kuu(1, j) = 0.0;
+                    }
+
+                    for (unsigned int j = 0; j < n_p_dofs; j++)
+                    {
+                        Kup(1, j) = 0.0;
+                    }
+
+                    for (unsigned int j = 0; j < n_u_dofs; j++)
+                    {
+                        Kuu(1, j) += const_1 * dphi_face[j][0](0);
+                        Kuu(1, j) += ((2.0 * alpha_v * Q_b) / p_b) * dphi_face[j][0](0);
+                    }
+
+                    Kuu(1, 1) += DtimeDer();
+                    Kuu(1, 1) += ((2.0 * alpha_v) / p_b) * dQdx_b;
+                    Kuu(1, 1) += (-(2.0 * alpha_v * Q_b) / (p_b * p_b)) * dpdx_b;
+                    Kuu(1, 1) += gamma_v / p_b;
+                    Kuu(1, 1) += dconst_1_dQ * (dAdt_b + dQdx_b);
+
+                    for (unsigned int j = 0; j < n_p_dofs; j++)
+                    {
+                        Kup(1, j) += (-((alpha_v * Q_b * Q_b) / (p_b * p_b)) +
+                                      betaV(elem_id, r_b) * dpofA(p_b)) *
+                                     dphi_face_p[j][0](0);
+                    }
+
+                    Kup(1, 1) += const_1 * DtimeDer();
+                    Kup(1, 1) += -((2.0 * alpha_v * Q_b) / (p_b * p_b)) * dQdx_b;
+                    Kup(1, 1) +=
+                        (((2.0 * alpha_v * Q_b * Q_b) / (p_b * p_b * p_b))) * dpdx_b;
+                    Kup(1, 1) += betaV(elem_id, r_b) * d2pofA(p_b) * dpdx_b;
+                    Kup(1, 1) += -gamma_v * (Q_b / (p_b * p_b));
+                    Kup(1, 1) += dconst_1_dp * (dAdt_b + dQdx_b);
+
+                    for (unsigned int j = 0; j < n_u_dofs; j++)
+                    {
+                        Kpu(1, j) = 0.0;
+                    }
+
+                    for (unsigned int j = 0; j < n_p_dofs; j++)
+                    {
+                        Kpp(1, j) = 0.0;
+                    }
+
+                    if (st_tree == 0)
+                    {
+                        Kpu(1, 1) = 1.0;
+                        Kpunout(1, 1) = 1.0;
+                    }
+                    else if (st_tree == 1)
+                    {
+                        Kpu(1, 1) = 1.0;
+                    }
+                }
+                else
+                {
+                    fe_face->reinit(elem, 1);
+                    fe_face_p->reinit(elem, 1);
+
+                    double dQdx_b = 0.0;
+                    double dpdx_b = 0.0;
+
+                    for (unsigned int i = 0; i < n_u_dofs; i++)
+                    {
+                        dQdx_b +=
+                            dphi_face[i][0](0) * system.current_solution(dof_indices_u[i]);
+                    }
+
+                    for (unsigned int i = 0; i < n_p_dofs; i++)
+                    {
+                        dpdx_b +=
+                            dphi_face_p[i][0](0) * system.current_solution(dof_indices_p[i]);
+                    }
+
+                    for (unsigned int j = 0; j < n_u_dofs; j++)
+                    {
+                        Kuu(1, j) = 0.0;
+                    }
+
+                    for (unsigned int j = 0; j < n_p_dofs; j++)
+                    {
+                        Kup(1, j) = 0.0;
+                    }
+
+                    for (unsigned int j = 0; j < n_u_dofs; j++)
+                    {
+                        Kuu(1, j) += const_2 * dphi_face[j][0](0);
+                        Kuu(1, j) += ((2.0 * alpha_v * Q_b) / p_b) * dphi_face[j][0](0);
+                    }
+
+                    Kuu(1, 1) += DtimeDer();
+                    Kuu(1, 1) += ((2.0 * alpha_v) / p_b) * dQdx_b;
+                    Kuu(1, 1) += (-(2.0 * alpha_v * Q_b) / (p_b * p_b)) * dpdx_b;
+                    Kuu(1, 1) += gamma_v / p_b;
+                    Kuu(1, 1) += dconst_2_dQ * (dAdt_b + dQdx_b);
+
+                    for (unsigned int j = 0; j < n_p_dofs; j++)
+                    {
+                        Kup(1, j) += (-((alpha_v * Q_b * Q_b) / (p_b * p_b)) +
+                                      betaV(elem_id, r_b) * dpofA(p_b)) *
+                                     dphi_face_p[j][0](0);
+                    }
+
+                    Kup(1, 1) += const_2 * DtimeDer();
+                    Kup(1, 1) += -((2.0 * alpha_v * Q_b) / (p_b * p_b)) * dQdx_b;
+                    Kup(1, 1) +=
+                        (((2.0 * alpha_v * Q_b * Q_b) / (p_b * p_b * p_b))) * dpdx_b;
+                    Kup(1, 1) += betaV(elem_id, r_b) * d2pofA(p_b) * dpdx_b;
+                    Kup(1, 1) += -gamma_v * (Q_b / (p_b * p_b));
+                    Kup(1, 1) += dconst_2_dp * (dAdt_b + dQdx_b);
+
+                    double A_n = flow_vec[dof_indices_neighbor_out_p[1]];
+                    double A_n0 = M_PI * pow(vessels[elem_id_n_out].r, 2);
+                    double A0_b = M_PI * pow(vessels[elem_id].r, 2);
+
+                    double Q_n = flow_vec[dof_indices_neighbor_out_u[1]];
+
+                    for (unsigned int j = 0; j < n_u_dofs; j++)
+                    {
+                        Kpu(1, j) = 0.0;
+                    }
+
+                    for (unsigned int j = 0; j < n_p_dofs; j++)
+                    {
+                        Kpp(1, j) = 0.0;
+                    }
+
+                    if (st_tree == 0)
+                    {
+                        if (interface_type == 0)
+                        {
+                            Kpp(1, 1) += ((vessels[elem_id].beta / A0_b) /
+                                          ((vessels[0].beta / (M_PI * pow(vessels[0].r, 2))))) *
+                                         (0.5 / sqrt(A_new));
+                            Kppnout(1, 1) -= ((vessels[elem_id_n_out].beta / A_n0) /
+                                              ((vessels[0].beta / (M_PI * pow(vessels[0].r, 2))))) *
+                                             (0.5 / sqrt(A_n));
+                        }
+
+                        else if (interface_type == 1)
+                        {
+                            Kpp(1, 1) += (vessels[elem_id].beta / A0_b) * (0.5 / sqrt(A_new));
+                            Kpp(1, 1) += -rho_v * (pow(Q_b, 2) / pow(A_new, 3));
+                            Kpu(1, 1) += rho_v * (Q_b / pow(A_new, 2));
+
+                            Kppnout(1, 1) -= (vessels[elem_id_n_out].beta / A_n0) * (0.5 / sqrt(A_n));
+                            Kppn(1, 1) -= -rho_v * (pow(Q_n, 2) / pow(A_n, 3));
+                            Kpunout(1, 1) -= rho_v * (Q_n / pow(A_n, 2));
+                        }
+                    }
+                    else if (st_tree == 1)
+                    {
+                        Kpu(1, 1) = 1.0;
+                    }
+                }
             }
         }
 
-        for (unsigned int side = 0; side < elem->n_sides(); side++)
+        else if ((vessels[elem_id].ter == 3)) // inlet
         {
+            unsigned int side = 0;
+            fe_face->reinit(elem, side);
+            fe_face_p->reinit(elem, side);
 
-            double r_b = 0.0;
-            if (side == 0)
-                r_b = vessels[elem_id].r1;
-            else if (side == 1)
-                r_b = vessels[elem_id].r2;
+            double dQdx_b = 0.0;
+            double dpdx_b = 0.0;
 
-            if (elem->neighbor_ptr(side) == libmesh_nullptr)
+            for (unsigned int i = 0; i < n_u_dofs; i++)
             {
-
-                const std::vector<Point> &normal_face = fe_face->get_normals();
-                fe_face->reinit(elem, side);
-
-                // short int bc_id = mesh.boundary_info->boundary_id(elem, side);
-
-                vector<boundary_id_type> bc_id_vec;
-                mesh.boundary_info->boundary_ids(elem, side, bc_id_vec);
-                short int bc_id =
-                    bc_id_vec[0];
-
-                if (bc_id == 1000) // left boundary
-                {
-                    //
-                    // double A_left = (M_PI * vessels[elem_id].r *vessels[elem_id].r);
-                    // double p_left =
-                    //     pow(((sqrt(A_left)) / (2.0 * rho_v * c_v * c_v)) * p_0 *
-                    //     ttime
-                    //     +
-                    //             sqrt(A_left),
-                    //         2);
-                    double p_left =
-                        AInlet(ttime); // system.current_solution(dof_indices_p[0]);
-                    double Q_left = system.current_solution(dof_indices_u[0]);
-
-                    if (eigen_bound != 2)
-                    {
-                        if (intervess_type == 0)
-                            Kuu(0, 0) += alpha_t * ((2.0 * alpha_v * Q_left) / p_left) *
-                                         normal_face[0].operator()(0);
-                    }
-                    if (eigen_bound != 2)
-                        Kpu(0, 0) += alpha_t * normal_face[0].operator()(0);
-                }
-
-                if (bc_id == 4000) // right boundary
-                {
-
-                    // double A_right = (M_PI * vessels[elem_id].r *
-                    // vessels[elem_id].r); double p_right = A_right;
-                    double p_right = AOutlet(
-                        ttime, elem_id); // system.current_solution(dof_indices_p[1]);
-                    double Q_right = system.current_solution(dof_indices_u[1]);
-                    if (eigen_bound != 2)
-                    {
-                        if (intervess_type == 0)
-                            Kuu(1, 1) += alpha_t * ((2.0 * alpha_v * Q_right) / p_right) *
-                                         normal_face[0].operator()(0);
-                    }
-
-                    if (eigen_bound != 2)
-                        Kpu(1, 1) += alpha_t * normal_face[0].operator()(0);
-                }
-                //
-
-                if (bc_id == 2000) // parent boundary at junction
-                {
-
-                    if (eigen_bound != 2)
-                    {
-                        Kpun1(1, 0) += normal_face[0].operator()(0);
-                        Kpun2(1, 0) += normal_face[0].operator()(0);
-                    }
-
-                    double Q_neigh1 = flow_vec
-                        [dof_indices_neighbor_1_u
-                             [0]]; // system.current_solution(dof_indices_neighbor_1_u[0]);
-                    double Q_neigh2 = flow_vec
-                        [dof_indices_neighbor_2_u
-                             [0]]; //  system.current_solution(dof_indices_neighbor_2_u[0]);
-                    double p_right = system.current_solution(dof_indices_p[1]);
-
-                    double Q_right =
-                        (Q_neigh1 +
-                         Q_neigh2); // system.current_solution(dof_indices_u[1]);
-
-                    // Kuu(1, 1) += ((2.0 * alpha_v * (Q_right)) / p_right) *
-                    //              normal_face[0].operator()(0);
-
-                    if (eigen_bound != 2)
-                    {
-                        if (intervess_type == 0)
-                            Kuun1(1, 0) += ((2.0 * alpha_v * (Q_right)) / p_right) *
-                                           normal_face[0].operator()(0);
-                        if (flow_type != 0)
-                            Kuun2(1, 0) += ((2.0 * alpha_v * (Q_right)) / p_right) *
-                                           normal_face[0].operator()(0);
-
-                        if (intervess_type == 0)
-                            Kup(1, 1) +=
-                                (-((alpha_v * (Q_right) * (Q_right)) / (p_right * p_right))) *
-                                normal_face[0].operator()(0);
-
-                        Kup(1, 1) += (betaV(elem_id, r_b) * dpofA(p_right)) *
-                                     normal_face[0].operator()(0);
-                    }
-                }
-
-                if (bc_id == 3000) // daughter boundary at junction
-                {
-                    if (eigen_bound != 2)
-                    {
-                        Kpu(0, 0) += normal_face[0].operator()(0);
-                    }
-
-                    double Q_left = system.current_solution(dof_indices_u[0]);
-
-                    double p_neigh = flow_vec
-                        [dof_indices_neighbor_p
-                             [1]]; // system.current_solution(dof_indices_neighbor_p[1]);
-
-                    // p_neigh = sqrt(p_neigh);
-                    // p_neigh -= sqrt(M_PI * pow(vessels[elem_id_n].r, 2));
-                    // p_neigh *= (vessels[elem_id_n].beta / vessels[elem_id].beta);
-                    // p_neigh *=
-                    //     (pow(vessels[elem_id].r, 2) / pow(vessels[elem_id_n].r, 2));
-                    // p_neigh += sqrt(M_PI * pow(vessels[elem_id_n].r, 2));
-                    //
-                    // p_neigh = pow(p_neigh, 2);
-
-                    double beta_r_A_r = (vessels[elem_id_n].beta / vessels[elem_id].beta);
-                    beta_r_A_r *=
-                        (pow(vessels[elem_id].r, 2) / pow(vessels[elem_id_n].r, 2));
-
-                    beta_r_A_r = 1.0; //
-
-                    if (eigen_bound != 2)
-                    {
-                        if (intervess_type == 0)
-                            Kuu(0, 0) += ((2.0 * alpha_v * Q_left) / p_neigh) *
-                                         normal_face[0].operator()(0);
-
-                        if (flow_type != 0)
-                            Kupn(0, 1) +=
-                                (-((alpha_v * Q_left * Q_left) / (p_neigh * p_neigh))) *
-                                beta_r_A_r * normal_face[0].operator()(0);
-
-                        Kupn(0, 1) += (betaV(elem_id, r_b) * dpofA(p_neigh)) * beta_r_A_r *
-                                      normal_face[0].operator()(0);
-                    }
-                }
+                dQdx_b +=
+                    dphi_face[i][0](0) * system.current_solution(dof_indices_u[i]);
             }
 
-            else
+            for (unsigned int i = 0; i < n_p_dofs; i++)
             {
-
-                if (intervess_type == 0)
-                {
-                    const std::vector<Point> &normal_face = fe_face->get_normals();
-                    fe_face->reinit(elem, side);
-
-                    // short int bc_id = mesh.boundary_info->boundary_id(elem, side);
-
-                    vector<boundary_id_type> bc_id_vec;
-                    mesh.boundary_info->boundary_ids(elem, side, bc_id_vec);
-                    short int bc_id =
-                        bc_id_vec[0];
-
-                    double p_side = system.current_solution(dof_indices_p[side]); // 0.0;
-
-                    Kup(side, side) += (betaV(elem_id, r_b) * dpofA(p_side)) *
-                                       normal_face[0].operator()(0);
-
-                    // cout << "elem_id=" << elem_id << " side=" << side
-                    //      << " normal=" << normal_face[0].operator()(0)
-                    //      << " p=" << vessels[elem_id].p << " dl=" <<
-                    //      vessels[elem_id].dl
-                    //      << " dr=" << vessels[elem_id].dr
-                    //      << " pdl=" << vessels[vessels[elem_id].p].dr << " bcid=" <<
-                    //      bc_id
-                    //      << endl;
-                }
+                dpdx_b +=
+                    dphi_face_p[i][0](0) * system.current_solution(dof_indices_p[i]);
             }
+
+            for (unsigned int j = 0; j < n_u_dofs; j++)
+            {
+                Kuu(0, j) = 0.0;
+            }
+
+            for (unsigned int j = 0; j < n_p_dofs; j++)
+            {
+                Kup(0, j) = 0.0;
+            }
+
+            for (unsigned int j = 0; j < n_u_dofs; j++)
+            {
+                Kuu(0, j) += const_2 * dphi_face[j][0](0);
+                Kuu(0, j) += ((2.0 * alpha_v * Q_b) / p_b) * dphi_face[j][0](0);
+            }
+
+            Kuu(0, 0) += DtimeDer();
+            Kuu(0, 0) += ((2.0 * alpha_v) / p_b) * dQdx_b;
+            Kuu(0, 0) += (-(2.0 * alpha_v * Q_b) / (p_b * p_b)) * dpdx_b;
+            Kuu(0, 0) += gamma_v / p_b;
+            Kuu(0, 0) += dconst_2_dQ * (dAdt_b + dQdx_b);
+
+            for (unsigned int j = 0; j < n_p_dofs; j++)
+            {
+                Kup(0, j) += (-((alpha_v * Q_b * Q_b) / (p_b * p_b)) +
+                              betaV(elem_id, r_b) * dpofA(p_b)) *
+                             dphi_face_p[j][0](0);
+            }
+
+            Kup(0, 0) += const_2 * DtimeDer();
+            Kup(0, 0) += -((2.0 * alpha_v * Q_b) / (p_b * p_b)) * dQdx_b;
+            Kup(0, 0) +=
+                (((2.0 * alpha_v * Q_b * Q_b) / (p_b * p_b * p_b))) * dpdx_b;
+            Kup(0, 0) += betaV(elem_id, r_b) * d2pofA(p_b) * dpdx_b;
+            Kup(0, 0) += -gamma_v * (Q_b / (p_b * p_b));
+            Kup(0, 0) += dconst_2_dp * (dAdt_b + dQdx_b);
+
+            double A_n = flow_vec
+                [dof_indices_neighbor_p
+                     [1]]; // system.current_solution(dof_indices_neighbor_p[1]);
+            double A_n0 = M_PI * pow(vessels[elem_id_n].r, 2);
+            double A0_b = M_PI * pow(vessels[elem_id].r, 2);
+
+            double Q_n = flow_vec
+                [dof_indices_neighbor_u
+                     [1]]; // system.current_solution(dof_indices_neighbor_u[1]);
+
+            for (unsigned int j = 0; j < n_u_dofs; j++)
+            {
+                Kpu(0, j) = 0.0;
+            }
+
+            for (unsigned int j = 0; j < n_p_dofs; j++)
+            {
+                Kpp(0, j) = 0.0;
+            }
+
+            if (interface_type == 0)
+            {
+                Kpp(0, 0) += ((vessels[elem_id].beta / A0_b) /
+                              ((vessels[0].beta / (M_PI * pow(vessels[0].r, 2))))) *
+                             (0.5 / sqrt(A_new));
+                Kppn(0, 1) -= ((vessels[elem_id_n].beta / A_n0) /
+                               ((vessels[0].beta / (M_PI * pow(vessels[0].r, 2))))) *
+                              (0.5 / sqrt(A_n));
+            }
+
+            else if (interface_type == 1)
+            {
+                Kpp(0, 0) += (vessels[elem_id].beta / A0_b) * (0.5 / sqrt(A_new));
+                Kpp(0, 0) += -rho_v * (pow(Q_b, 2) / pow(A_new, 3));
+                Kpu(0, 0) += rho_v * (Q_b / pow(A_new, 2));
+
+                Kppn(0, 1) -= (vessels[elem_id_n].beta / A_n0) * (0.5 / sqrt(A_n));
+                Kppn(0, 1) -= -rho_v * (pow(Q_n, 2) / pow(A_n, 3));
+                Kpun(0, 1) -= rho_v * (Q_n / pow(A_n, 2));
+            }
+        }
+
+        else if ((vessels[elem_id].ter == 2)) // outlet
+        {
+            fe_face->reinit(elem, 1);
+            fe_face_p->reinit(elem, 1);
+
+            double dQdx_b = 0.0;
+            double dpdx_b = 0.0;
+
+            for (unsigned int i = 0; i < n_u_dofs; i++)
+            {
+                dQdx_b +=
+                    dphi_face[i][0](0) * system.current_solution(dof_indices_u[i]);
+            }
+
+            for (unsigned int i = 0; i < n_p_dofs; i++)
+            {
+                dpdx_b +=
+                    dphi_face_p[i][0](0) * system.current_solution(dof_indices_p[i]);
+            }
+
+            for (unsigned int j = 0; j < n_u_dofs; j++)
+            {
+                Kuu(1, j) = 0.0;
+            }
+
+            for (unsigned int j = 0; j < n_p_dofs; j++)
+            {
+                Kup(1, j) = 0.0;
+            }
+
+            for (unsigned int j = 0; j < n_u_dofs; j++)
+            {
+                Kuu(1, j) += const_1 * dphi_face[j][0](0);
+                Kuu(1, j) += ((2.0 * alpha_v * Q_b) / p_b) * dphi_face[j][0](0);
+            }
+
+            Kuu(1, 1) += DtimeDer();
+            Kuu(1, 1) += ((2.0 * alpha_v) / p_b) * dQdx_b;
+            Kuu(1, 1) += (-(2.0 * alpha_v * Q_b) / (p_b * p_b)) * dpdx_b;
+            Kuu(1, 1) += gamma_v / p_b;
+            Kuu(1, 1) += dconst_1_dQ * (dAdt_b + dQdx_b);
+
+            for (unsigned int j = 0; j < n_p_dofs; j++)
+            {
+                Kup(1, j) += (-((alpha_v * Q_b * Q_b) / (p_b * p_b)) +
+                              betaV(elem_id, r_b) * dpofA(p_b)) *
+                             dphi_face_p[j][0](0);
+            }
+
+            Kup(1, 1) += const_1 * DtimeDer();
+            Kup(1, 1) += -((2.0 * alpha_v * Q_b) / (p_b * p_b)) * dQdx_b;
+            Kup(1, 1) +=
+                (((2.0 * alpha_v * Q_b * Q_b) / (p_b * p_b * p_b))) * dpdx_b;
+            Kup(1, 1) += betaV(elem_id, r_b) * d2pofA(p_b) * dpdx_b;
+            Kup(1, 1) += -gamma_v * (Q_b / (p_b * p_b));
+            Kup(1, 1) += dconst_1_dp * (dAdt_b + dQdx_b);
+
+            for (unsigned int j = 0; j < n_u_dofs; j++)
+            {
+                Kpu(1, j) = 0.0;
+            }
+
+            for (unsigned int j = 0; j < n_p_dofs; j++)
+            {
+                Kpp(1, j) = 0.0;
+            }
+            Kpu(1, 1) = 1.0;
+            Kpun1(1, 0) = -1.0;
+            Kpun2(1, 0) = -1.0;
         }
 
         if (vessels[elem_id].p != -10)
@@ -1850,16 +1613,6 @@ void VesselFlow::compute_jacobian(const NumericVector<Number> &,
         elem_count++;
         J.add_matrix(Ke, dof_indices);
 
-        // cout << elem_id << "parent=" << vessels_new[elem_id].p
-        //      << " dl=" << vessels_new[elem_id].dl
-        //      << " dr=" << vessels_new[elem_id].dr << endl;
-        // cout << "Ke=" << Ke << endl;
-        // cout << "Kupn=" << Kupn << endl;
-        // cout << "Kuun=" << Kuun << endl;
-        // cout << "Kpun1=" << Kpun1 << endl;
-        // cout << "Kpnu2=" << Kpun2 << endl;
-        // cout << "Kuun1=" << Kuun1 << endl;
-        // cout << "Kuun2=" << Kuun2 << endl << endl;
     } // end of element loop
 
     // cout << "COMPUTED JACOBIAN" << endl;
@@ -1961,19 +1714,6 @@ void VesselFlow::compute_residual(const NumericVector<Number> &X,
 
     R.zero();
 
-    // MeshBase::const_element_iterator el_ch =
-    // mesh.active_local_elements_begin(); const MeshBase::const_element_iterator
-    // end_el_ch =
-    //     mesh.active_local_elements_end();
-    // int elem_count_ch = 0;
-    // for (; el_ch != end_el_ch; ++el_ch) {
-    //   const Elem *elem = *el_ch;
-    //
-    //   const auto elem_id = elem->id();
-    //   cout << "elem_id=" << elem_id << " count=" << elem_count_ch << endl;
-    //   elem_count_ch++;
-    // }
-
     MeshBase::const_element_iterator el = mesh.active_local_elements_begin();
     const MeshBase::const_element_iterator end_el =
         mesh.active_local_elements_end();
@@ -2069,41 +1809,20 @@ void VesselFlow::compute_residual(const NumericVector<Number> &X,
             for (unsigned int i = 0; i < n_u_dofs; i++)
             {
 
-                if (intervess_type == 0)
-                {
-                    if (flow_type != 0)
-                    {
-                        Fu(i) += -alpha_t * (alpha_v * ((Q_qp * Q_qp) / p_qp)) *
-                                 dphi[i][qp](0) * JxW[qp];
+                Fu(i) += alpha_t * ((2.0 * alpha_v * Q_qp) / p_qp) * dQdx_qp *
+                         phi[i][qp] * JxW[qp];
+                Fu(i) += (1.0 - alpha_t) * ((2.0 * alpha_v * Q_qp_old) / p_qp_old) *
+                         dQdx_qp_old * phi[i][qp] * JxW[qp];
 
-                        Fu(i) += -(1.0 - alpha_t) *
-                                 (alpha_v * ((Q_qp_old * Q_qp_old) / p_qp_old)) *
-                                 dphi[i][qp](0) * JxW[qp];
-                    }
-
-                    Fu(i) += -alpha_t * (betaV(elem_id, r_qp) * pofA(p_qp)) *
-                             dphi[i][qp](0) * JxW[qp];
-                    Fu(i) += -(1.0 - alpha_t) * (betaV(elem_id, r_qp) * pofA(p_qp_old)) *
-                             dphi[i][qp](0) * JxW[qp];
-                }
-
-                else if (intervess_type == 1)
-                {
-                    Fu(i) += alpha_t * ((2.0 * alpha_v * Q_qp) / p_qp) * dQdx_qp *
-                             phi[i][qp] * JxW[qp];
-                    Fu(i) += (1.0 - alpha_t) * ((2.0 * alpha_v * Q_qp_old) / p_qp_old) *
-                             dQdx_qp_old * phi[i][qp] * JxW[qp];
-
-                    Fu(i) += alpha_t *
-                             (-(alpha_v * ((Q_qp * Q_qp) / (p_qp * p_qp))) +
-                              betaV(elem_id, r_qp) * dpofA(p_qp)) *
-                             dpdx_qp * phi[i][qp] * JxW[qp];
-                    Fu(i) +=
-                        (1.0 - alpha_t) *
-                        (-(alpha_v * ((Q_qp_old * Q_qp_old) / (p_qp_old * p_qp_old))) +
-                         betaV(elem_id, r_qp) * dpofA(p_qp)) *
-                        dpdx_qp_old * phi[i][qp] * JxW[qp];
-                }
+                Fu(i) += alpha_t *
+                         (-(alpha_v * ((Q_qp * Q_qp) / (p_qp * p_qp))) +
+                          betaV(elem_id, r_qp) * dpofA(p_qp)) *
+                         dpdx_qp * phi[i][qp] * JxW[qp];
+                Fu(i) +=
+                    (1.0 - alpha_t) *
+                    (-(alpha_v * ((Q_qp_old * Q_qp_old) / (p_qp_old * p_qp_old))) +
+                     betaV(elem_id, r_qp) * dpofA(p_qp)) *
+                    dpdx_qp_old * phi[i][qp] * JxW[qp];
 
                 Fu(i) += alpha_t * source_q(Q_qp, p_qp) * phi[i][qp] * JxW[qp];
 
@@ -2116,18 +1835,8 @@ void VesselFlow::compute_residual(const NumericVector<Number> &X,
 
             for (unsigned int i = 0; i < n_p_dofs; i++)
             {
-
-                if (intervess_type == 0)
-                {
-                    Fp(i) += -alpha_t * Q_qp * dpsi[i][qp](0) * JxW[qp];
-                    Fp(i) += -(1.0 - alpha_t) * Q_qp_old * dpsi[i][qp](0) * JxW[qp];
-                }
-
-                else if (intervess_type == 1)
-                {
-                    Fp(i) += alpha_t * dQdx_qp * psi[i][qp] * JxW[qp];
-                    Fp(i) += (1.0 - alpha_t) * dQdx_qp_old * psi[i][qp] * JxW[qp];
-                }
+                Fp(i) += alpha_t * dQdx_qp * psi[i][qp] * JxW[qp];
+                Fp(i) += (1.0 - alpha_t) * dQdx_qp_old * psi[i][qp] * JxW[qp];
 
                 if (trans_soln == 1)
                     Fp(i) += timeDer(p_qp, p_qp_old, p_qp_n1) * psi[i][qp] * JxW[qp];
@@ -2182,460 +1891,152 @@ void VesselFlow::compute_residual(const NumericVector<Number> &X,
             }
         }
 
-        if (eigen_bound == 2)
+        double A_new = 0.0;
+        double A_old = 0.0;
+        double A_n1 = 0.0;
+
+        double dAdt_b = 0.0;
+
+        double Q_b = 0.0;
+        double Q_b_old = 0.0;
+        double Q_b_n1 = 0.0;
+        double dQdt_b = 0.0;
+        double p_b = 0.0;
+        double r_b = 0.0;
+
+        double const_1 = 0.0;
+        double const_2 = 0.0;
+
+        if ((vessels[elem_id].ter == -1) || (vessels[elem_id].ter == 3)) // inlet
         {
-            double A_new = 0.0;
-            double A_old = 0.0;
-            double A_n1 = 0.0;
+            A_new = system.current_solution(dof_indices_p[0]);
+            A_old = system_old.current_solution(dof_indices_p_old[0]);
+            A_n1 = system_n1.current_solution(dof_indices_p_n1[0]);
 
-            double dAdt_b = 0.0;
+            dAdt_b = timeDer(A_new, A_old, A_n1); // dAInletdt(ttime);
 
-            double Q_b = 0.0;
-            double Q_b_old = 0.0;
-            double Q_b_n1 = 0.0;
-            double dQdt_b = 0.0;
-            double p_b = 0.0;
-            double r_b = 0.0;
+            Q_b = system.current_solution(dof_indices_u[0]);
+            Q_b_old = system_old.current_solution(dof_indices_u_old[0]);
+            Q_b_n1 = system_n1.current_solution(dof_indices_u_n1[0]);
+            dQdt_b = timeDer(Q_b, Q_b_old, Q_b_n1);
+            p_b = A_new; // AInlet(ttime)
+            r_b = vessels[elem_id].r1;
+        }
 
-            double const_1 = 0.0;
-            double const_2 = 0.0;
+        else if ((vessels[elem_id].ter == 1) ||
+                 (vessels[elem_id].ter == 2)) // outlet
+        {
+            A_new = system.current_solution(dof_indices_p[1]);
+            A_old = system_old.current_solution(dof_indices_p_old[1]);
+            A_n1 = system_n1.current_solution(dof_indices_p_n1[1]);
 
-            if ((vessels[elem_id].ter == -1) || (vessels[elem_id].ter == 3)) // inlet
+            dAdt_b = timeDer(A_new, A_old, A_n1); // dAOutletdt(ttime);
+            Q_b = system.current_solution(dof_indices_u[1]);
+            Q_b_old = system_old.current_solution(dof_indices_u_old[1]);
+            Q_b_n1 = system_n1.current_solution(dof_indices_u_n1[1]);
+            dQdt_b = timeDer(Q_b, Q_b_old, Q_b_n1);
+            p_b = A_new; // AOutlet(ttime);
+            r_b = vessels[elem_id].r2;
+        }
+
+        if ((vessels[elem_id].ter == -1) || (vessels[elem_id].ter == 1) ||
+            (vessels[elem_id].ter == 3) || (vessels[elem_id].ter == 2))
+        {
+            double const_a = -alpha_v * (Q_b / p_b);
+            // double const_b =
+            //     sqrt(((Q_b * Q_b * alpha_v * (alpha_v - 1.0)) / (p_b * p_b)) +
+            //          betaPr(elem_id, r_b) * (sqrt(p_b) / (2.0 * rho_v *
+            //          A0_in)));
+
+            double const_b = 0.0;
+
+            if (wave_type == 0)
+                const_b =
+                    sqrt(((Q_b * Q_b * alpha_v * (alpha_v - 1.0)) / (p_b * p_b)) +
+                         betaPr(elem_id, r_b));
+            else if (wave_type == 1)
+                const_b =
+                    sqrt(((Q_b * Q_b * alpha_v * (alpha_v - 1.0)) / (p_b * p_b)) +
+                         betaPr(elem_id, r_b) * sqrt(p_b));
+
+            const_1 = const_a + const_b;
+            const_2 = const_a - const_b;
+        }
+
+        if ((vessels[elem_id].ter == -1)) // inlet
+        {
+            unsigned int side = 0;
+
+            fe_face->reinit(elem, side);
+            fe_face_p->reinit(elem, side);
+
+            double dQdx_b = 0.0;
+            double dpdx_b = 0.0;
+
+            for (unsigned int i = 0; i < n_u_dofs; i++)
             {
-                A_new = system.current_solution(dof_indices_p[0]);
-                A_old = system_old.current_solution(dof_indices_p_old[0]);
-                A_n1 = system_n1.current_solution(dof_indices_p_n1[0]);
-
-                dAdt_b = timeDer(A_new, A_old, A_n1); // dAInletdt(ttime);
-
-                Q_b = system.current_solution(dof_indices_u[0]);
-                Q_b_old = system_old.current_solution(dof_indices_u_old[0]);
-                Q_b_n1 = system_n1.current_solution(dof_indices_u_n1[0]);
-                dQdt_b = timeDer(Q_b, Q_b_old, Q_b_n1);
-                p_b = A_new; // AInlet(ttime)
-                r_b = vessels[elem_id].r1;
+                dQdx_b +=
+                    dphi_face[i][0](0) * system.current_solution(dof_indices_u[i]);
             }
 
-            else if ((vessels[elem_id].ter == 1) ||
-                     (vessels[elem_id].ter == 2)) // outlet
+            double dQdx_b_old = 0.0;
+            for (unsigned int i = 0; i < n_u_dofs; i++)
             {
-                A_new = system.current_solution(dof_indices_p[1]);
-                A_old = system_old.current_solution(dof_indices_p_old[1]);
-                A_n1 = system_n1.current_solution(dof_indices_p_n1[1]);
-
-                dAdt_b = timeDer(A_new, A_old, A_n1); // dAOutletdt(ttime);
-                Q_b = system.current_solution(dof_indices_u[1]);
-                Q_b_old = system_old.current_solution(dof_indices_u_old[1]);
-                Q_b_n1 = system_n1.current_solution(dof_indices_u_n1[1]);
-                dQdt_b = timeDer(Q_b, Q_b_old, Q_b_n1);
-                p_b = A_new; // AOutlet(ttime);
-                r_b = vessels[elem_id].r2;
+                dQdx_b_old += dphi_face[i][0](0) *
+                              system_old.current_solution(dof_indices_u_old[i]);
             }
 
-            // cout << "r_b=" << r_b << endl;
-            if ((vessels[elem_id].ter == -1) || (vessels[elem_id].ter == 1) ||
-                (vessels[elem_id].ter == 3) || (vessels[elem_id].ter == 2))
+            for (unsigned int i = 0; i < n_p_dofs; i++)
             {
-                double const_a = -alpha_v * (Q_b / p_b);
-                // double const_b =
-                //     sqrt(((Q_b * Q_b * alpha_v * (alpha_v - 1.0)) / (p_b * p_b)) +
-                //          betaPr(elem_id, r_b) * (sqrt(p_b) / (2.0 * rho_v *
-                //          A0_in)));
-
-                double const_b = 0.0;
-
-                if (wave_type == 0)
-                    const_b =
-                        sqrt(((Q_b * Q_b * alpha_v * (alpha_v - 1.0)) / (p_b * p_b)) +
-                             betaPr(elem_id, r_b));
-                else if (wave_type == 1)
-                    const_b =
-                        sqrt(((Q_b * Q_b * alpha_v * (alpha_v - 1.0)) / (p_b * p_b)) +
-                             betaPr(elem_id, r_b) * sqrt(p_b));
-
-                const_1 = const_a + const_b;
-                const_2 = const_a - const_b;
+                dpdx_b +=
+                    dphi_face_p[i][0](0) * system.current_solution(dof_indices_p[i]);
             }
 
-            if ((vessels[elem_id].ter == -1)) // inlet
+            double dpdx_b_old = 0.0;
+            for (unsigned int i = 0; i < n_p_dofs; i++)
             {
-                unsigned int side = 0;
-
-                fe_face->reinit(elem, side);
-                fe_face_p->reinit(elem, side);
-
-                double dQdx_b = 0.0;
-                double dpdx_b = 0.0;
-
-                for (unsigned int i = 0; i < n_u_dofs; i++)
-                {
-                    dQdx_b +=
-                        dphi_face[i][0](0) * system.current_solution(dof_indices_u[i]);
-                }
-
-                double dQdx_b_old = 0.0;
-                for (unsigned int i = 0; i < n_u_dofs; i++)
-                {
-                    dQdx_b_old += dphi_face[i][0](0) *
-                                  system_old.current_solution(dof_indices_u_old[i]);
-                }
-
-                for (unsigned int i = 0; i < n_p_dofs; i++)
-                {
-                    dpdx_b +=
-                        dphi_face_p[i][0](0) * system.current_solution(dof_indices_p[i]);
-                }
-
-                double dpdx_b_old = 0.0;
-                for (unsigned int i = 0; i < n_p_dofs; i++)
-                {
-                    dpdx_b_old += dphi_face_p[i][0](0) *
-                                  system_old.current_solution(dof_indices_p_old[i]);
-                }
-
-                Fu(0) = 0.0;
-                Fu(0) += const_2 * (dAdt_b + dQdx_b);
-                Fu(0) += dQdt_b;
-                Fu(0) += ((2.0 * alpha_v * Q_b) / p_b) * dQdx_b;
-                Fu(0) += (-((alpha_v * Q_b * Q_b) / (p_b * p_b)) +
-                          betaV(elem_id, r_b) * dpofA(p_b)) *
-                         dpdx_b;
-                Fu(0) += gamma_v * (Q_b / p_b);
-
-                if (inlet_bc == 0)
-                {
-                    if (venous_flow == 0)
-                        Fp(0) = system.current_solution(dof_indices_p[0]) - AInlet(ttime);
-
-                    else if (venous_flow == 1)
-                    {
-                        if (elem_id < vessels_in.size())
-                            Fp(0) = system.current_solution(dof_indices_p[0]) - AInlet(ttime);
-
-                        else
-                            Fp(0) = system.current_solution(dof_indices_p[0]) - AOutlet(ttime, elem_id);
-                    }
-                }
-
-                else if (inlet_bc == 1)
-                {
-                    Fp(0) = 0.0;
-
-                    Fp(0) += const_1 * dAdt_b;
-
-                    Fp(0) += dQdt_b;
-                    Fp(0) += gamma_v * (Q_b / p_b);
-                }
+                dpdx_b_old += dphi_face_p[i][0](0) *
+                              system_old.current_solution(dof_indices_p_old[i]);
             }
 
-            else if ((vessels[elem_id].ter == 1)) // outlet
+            Fu(0) = 0.0;
+            Fu(0) += const_2 * (dAdt_b + dQdx_b);
+            Fu(0) += dQdt_b;
+            Fu(0) += ((2.0 * alpha_v * Q_b) / p_b) * dQdx_b;
+            Fu(0) += (-((alpha_v * Q_b * Q_b) / (p_b * p_b)) +
+                      betaV(elem_id, r_b) * dpofA(p_b)) *
+                     dpdx_b;
+            Fu(0) += gamma_v * (Q_b / p_b);
+
+            if (inlet_bc == 0)
             {
                 if (venous_flow == 0)
-                {
-                    fe_face->reinit(elem, 1);
-                    fe_face_p->reinit(elem, 1);
+                    Fp(0) = system.current_solution(dof_indices_p[0]) - AInlet(ttime);
 
-                    double dQdx_b = 0.0;
-                    double dpdx_b = 0.0;
-
-                    for (unsigned int i = 0; i < n_u_dofs; i++)
-                    {
-                        dQdx_b +=
-                            dphi_face[i][0](0) * system.current_solution(dof_indices_u[i]);
-                    }
-
-                    double dQdx_b_old = 0.0;
-                    for (unsigned int i = 0; i < n_u_dofs; i++)
-                    {
-                        dQdx_b_old += dphi_face[i][0](0) *
-                                      system_old.current_solution(dof_indices_u_old[i]);
-                    }
-
-                    for (unsigned int i = 0; i < n_p_dofs; i++)
-                    {
-                        dpdx_b +=
-                            dphi_face_p[i][0](0) * system.current_solution(dof_indices_p[i]);
-                    }
-
-                    double dpdx_b_old = 0.0;
-                    for (unsigned int i = 0; i < n_p_dofs; i++)
-                    {
-                        dpdx_b_old += dphi_face_p[i][0](0) *
-                                      system_old.current_solution(dof_indices_p_old[i]);
-                    }
-
-                    Fu(1) = 0.0;
-                    Fu(1) += const_1 * (dAdt_b + dQdx_b);
-                    Fu(1) += dQdt_b;
-                    Fu(1) += ((2.0 * alpha_v * Q_b) / p_b) * dQdx_b;
-                    Fu(1) += (-((alpha_v * Q_b * Q_b) / (p_b * p_b)) +
-                              betaV(elem_id, r_b) * dpofA(p_b)) *
-                             dpdx_b;
-                    Fu(1) += gamma_v * (Q_b / p_b);
-
-                    if (outlet_bc == 0)
-                        Fp(1) = system.current_solution(dof_indices_p[1]) -
-                                AOutlet(ttime, elem_id);
-                    else if (outlet_bc == 1)
-                    {
-                        Fp(1) = 0.0;
-
-                        Fp(1) += const_2 * dAdt_b;
-
-                        Fp(1) += dQdt_b;
-                        Fp(1) += gamma_v * (Q_b / p_b);
-                    }
-
-                    else if (outlet_bc == 2)
-                    {
-                        Fp(1) = 0.0;
-
-                        double A0_cur = M_PI * pow(vessels[elem_id].r, 2);
-                        double A0bybeta = A0_cur / vessels[elem_id].beta;
-                        double At_cur = pow(
-                            sqrt(A0_cur) +
-                                A0bybeta * (PDrain(ttime) +
-                                            sqrt(p_0 / rho_v) * ((L_v * L_v) / gamma_perm) *
-                                                system.current_solution(dof_indices_u[1])),
-                            2);
-
-                        Fp(1) += system.current_solution(dof_indices_p[1]);
-                        Fp(1) += -At_cur;
-                    }
-                }
                 else if (venous_flow == 1)
                 {
                     if (elem_id < vessels_in.size())
-                    {
-                        fe_face->reinit(elem, 1);
-                        fe_face_p->reinit(elem, 1);
+                        Fp(0) = system.current_solution(dof_indices_p[0]) - AInlet(ttime);
 
-                        double dQdx_b = 0.0;
-                        double dpdx_b = 0.0;
-
-                        for (unsigned int i = 0; i < n_u_dofs; i++)
-                        {
-                            dQdx_b +=
-                                dphi_face[i][0](0) * system.current_solution(dof_indices_u[i]);
-                        }
-
-                        double dQdx_b_old = 0.0;
-                        for (unsigned int i = 0; i < n_u_dofs; i++)
-                        {
-                            dQdx_b_old += dphi_face[i][0](0) *
-                                          system_old.current_solution(dof_indices_u_old[i]);
-                        }
-
-                        for (unsigned int i = 0; i < n_p_dofs; i++)
-                        {
-                            dpdx_b +=
-                                dphi_face_p[i][0](0) * system.current_solution(dof_indices_p[i]);
-                        }
-
-                        double dpdx_b_old = 0.0;
-                        for (unsigned int i = 0; i < n_p_dofs; i++)
-                        {
-                            dpdx_b_old += dphi_face_p[i][0](0) *
-                                          system_old.current_solution(dof_indices_p_old[i]);
-                        }
-
-                        Fu(1) = 0.0;
-                        Fu(1) += const_1 * (dAdt_b + dQdx_b);
-                        Fu(1) += dQdt_b;
-                        Fu(1) += ((2.0 * alpha_v * Q_b) / p_b) * dQdx_b;
-                        Fu(1) += (-((alpha_v * Q_b * Q_b) / (p_b * p_b)) +
-                                  betaV(elem_id, r_b) * dpofA(p_b)) *
-                                 dpdx_b;
-                        Fu(1) += gamma_v * (Q_b / p_b);
-
-                        // Fp(1) = system.current_solution(dof_indices_u[1]) -
-                        //         (system.current_solution(dof_indices_neighbor_1_u[0]) +
-                        //          system.current_solution(dof_indices_neighbor_2_u[0]));
-
-                        if (st_tree == 0)
-                        {
-                            Fp(1) = system.current_solution(dof_indices_u[1]) +
-                                    flow_vec[dof_indices_neighbor_out_u[1]];
-                        }
-                        else if (st_tree == 1)
-                        {
-                            int vessel_ter_num = vessels[elem_id].ter_num;
-
-                            if (vessel_ter_num == -10)
-                                cout << "error in terminal number" << endl;
-                            else
-                                Fp(1) = system.current_solution(dof_indices_u[1]) - qArt[vessel_ter_num];
-                        }
-                    }
                     else
-                    {
-
-                        fe_face->reinit(elem, 1);
-                        fe_face_p->reinit(elem, 1);
-
-                        double dQdx_b = 0.0;
-                        double dpdx_b = 0.0;
-
-                        for (unsigned int i = 0; i < n_u_dofs; i++)
-                        {
-                            dQdx_b +=
-                                dphi_face[i][0](0) * system.current_solution(dof_indices_u[i]);
-                        }
-
-                        double dQdx_b_old = 0.0;
-                        for (unsigned int i = 0; i < n_u_dofs; i++)
-                        {
-                            dQdx_b_old += dphi_face[i][0](0) *
-                                          system_old.current_solution(dof_indices_u_old[i]);
-                        }
-
-                        for (unsigned int i = 0; i < n_p_dofs; i++)
-                        {
-                            dpdx_b +=
-                                dphi_face_p[i][0](0) * system.current_solution(dof_indices_p[i]);
-                        }
-
-                        double dpdx_b_old = 0.0;
-                        for (unsigned int i = 0; i < n_p_dofs; i++)
-                        {
-                            dpdx_b_old += dphi_face_p[i][0](0) *
-                                          system_old.current_solution(dof_indices_p_old[i]);
-                        }
-
-                        Fu(1) = 0.0;
-                        Fu(1) += const_2 * (dAdt_b + dQdx_b);
-                        Fu(1) += dQdt_b;
-                        Fu(1) += ((2.0 * alpha_v * Q_b) / p_b) * dQdx_b;
-                        Fu(1) += (-((alpha_v * Q_b * Q_b) / (p_b * p_b)) +
-                                  betaV(elem_id, r_b) * dpofA(p_b)) *
-                                 dpdx_b;
-                        Fu(1) += gamma_v * (Q_b / p_b);
-
-                        double A_n = flow_vec[dof_indices_neighbor_out_p[1]];
-                        double A_n0 = M_PI * pow(vessels[elem_id_n_out].r, 2);
-                        double A0_b = M_PI * pow(vessels[elem_id].r, 2);
-
-                        double Q_n = flow_vec[dof_indices_neighbor_out_u[1]];
-
-                        if (st_tree == 0)
-                        {
-                            if (interface_type == 0)
-                            {
-                                Fp(1) = ((vessels[elem_id].beta / A0_b) /
-                                         ((vessels[0].beta / (M_PI * pow(vessels[0].r, 2))))) *
-                                        (sqrt(A_new) - sqrt(A0_b));
-                                Fp(1) -= ((vessels[elem_id_n_out].beta / A_n0) /
-                                          ((vessels[0].beta / (M_PI * pow(vessels[0].r, 2))))) *
-                                         (sqrt(A_n) - sqrt(A_n0));
-
-                                /* Fp(1) += (vessels[elem_id].pext - vessels[elem_id_n_out].pext) /
-                                         ((vessels[0].beta / (M_PI * pow(vessels[0].r, 2)))); */
-                            }
-
-                            else if (interface_type == 1)
-                            {
-                                Fp(1) = (vessels[elem_id].beta / A0_b) * (sqrt(A_new) - sqrt(A0_b));
-                                Fp(1) += 0.5 * rho_v * pow(Q_b / A_new, 2);
-                                Fp(1) -= (vessels[elem_id_n_out].beta / A_n0) * (sqrt(A_n) - sqrt(A_n0));
-                                Fp(1) -= 0.5 * rho_v * pow(Q_n / A_n, 2);
-
-                                /* Fp(0) += (vessels[elem_id].pext - vessels[elem_id_n_out].pext); */
-                            }
-                        }
-
-                        else if (st_tree == 1)
-                        {
-                            int vessel_ter_num = vessels[elem_id].ter_num;
-
-                            if (vessel_ter_num == -10)
-                                cout << "error in terminal number" << endl;
-                            else
-                                Fp(1) = system.current_solution(dof_indices_u[1]) - qVein[vessel_ter_num];
-                        }
-                    }
+                        Fp(0) = system.current_solution(dof_indices_p[0]) - AOutlet(ttime, elem_id);
                 }
             }
 
-            else if ((vessels[elem_id].ter == 3)) // inlet
+            else if (inlet_bc == 1)
             {
-                unsigned int side = 0;
+                Fp(0) = 0.0;
 
-                fe_face->reinit(elem, side);
-                fe_face_p->reinit(elem, side);
+                Fp(0) += const_1 * dAdt_b;
 
-                double dQdx_b = 0.0;
-                double dpdx_b = 0.0;
-
-                for (unsigned int i = 0; i < n_u_dofs; i++)
-                {
-                    dQdx_b +=
-                        dphi_face[i][0](0) * system.current_solution(dof_indices_u[i]);
-                }
-
-                double dQdx_b_old = 0.0;
-                for (unsigned int i = 0; i < n_u_dofs; i++)
-                {
-                    dQdx_b_old += dphi_face[i][0](0) *
-                                  system_old.current_solution(dof_indices_u_old[i]);
-                }
-
-                for (unsigned int i = 0; i < n_p_dofs; i++)
-                {
-                    dpdx_b +=
-                        dphi_face_p[i][0](0) * system.current_solution(dof_indices_p[i]);
-                }
-
-                double dpdx_b_old = 0.0;
-                for (unsigned int i = 0; i < n_p_dofs; i++)
-                {
-                    dpdx_b_old += dphi_face_p[i][0](0) *
-                                  system_old.current_solution(dof_indices_p_old[i]);
-                }
-
-                Fu(0) = 0.0;
-                Fu(0) += const_2 * (dAdt_b + dQdx_b);
-                Fu(0) += dQdt_b;
-                Fu(0) += ((2.0 * alpha_v * Q_b) / p_b) * dQdx_b;
-                Fu(0) += (-((alpha_v * Q_b * Q_b) / (p_b * p_b)) +
-                          betaV(elem_id, r_b) * dpofA(p_b)) *
-                         dpdx_b;
-                Fu(0) += gamma_v * (Q_b / p_b);
-
-                double A_n = flow_vec
-                    [dof_indices_neighbor_p
-                         [1]]; // system.current_solution(dof_indices_neighbor_p[1]);
-                double A_n0 = M_PI * pow(vessels[elem_id_n].r, 2);
-                double A0_b = M_PI * pow(vessels[elem_id].r, 2);
-
-                double Q_n = flow_vec
-                    [dof_indices_neighbor_u
-                         [1]]; // system.current_solution(dof_indices_neighbor_u[1]);
-
-                if (interface_type == 0)
-                {
-                    Fp(0) = ((vessels[elem_id].beta / A0_b) /
-                             ((vessels[0].beta / (M_PI * pow(vessels[0].r, 2))))) *
-                            (sqrt(A_new) - sqrt(A0_b));
-                    Fp(0) -= ((vessels[elem_id_n].beta / A_n0) /
-                              ((vessels[0].beta / (M_PI * pow(vessels[0].r, 2))))) *
-                             (sqrt(A_n) - sqrt(A_n0));
-
-                    Fp(0) += (vessels[elem_id].pext - vessels[elem_id_n].pext) /
-                             ((vessels[0].beta / (M_PI * pow(vessels[0].r, 2))));
-                }
-
-                else if (interface_type == 1)
-                {
-                    Fp(0) = (vessels[elem_id].beta / A0_b) * (sqrt(A_new) - sqrt(A0_b));
-                    Fp(0) += 0.5 * rho_v * pow(Q_b / A_new, 2);
-                    Fp(0) -= (vessels[elem_id_n].beta / A_n0) * (sqrt(A_n) - sqrt(A_n0));
-                    Fp(0) -= 0.5 * rho_v * pow(Q_n / A_n, 2);
-
-                    Fp(0) += (vessels[elem_id].pext - vessels[elem_id_n].pext);
-                }
+                Fp(0) += dQdt_b;
+                Fp(0) += gamma_v * (Q_b / p_b);
             }
+        }
 
-            else if ((vessels[elem_id].ter == 2)) // outlet
+        else if ((vessels[elem_id].ter == 1)) // outlet
+        {
+            if (venous_flow == 0)
             {
                 fe_face->reinit(elem, 1);
                 fe_face_p->reinit(elem, 1);
@@ -2678,205 +2079,323 @@ void VesselFlow::compute_residual(const NumericVector<Number> &X,
                          dpdx_b;
                 Fu(1) += gamma_v * (Q_b / p_b);
 
-                // Fp(1) = system.current_solution(dof_indices_u[1]) -
-                //         (system.current_solution(dof_indices_neighbor_1_u[0]) +
-                //          system.current_solution(dof_indices_neighbor_2_u[0]));
+                if (outlet_bc == 0)
+                    Fp(1) = system.current_solution(dof_indices_p[1]) -
+                            AOutlet(ttime, elem_id);
+                else if (outlet_bc == 1)
+                {
+                    Fp(1) = 0.0;
 
-                Fp(1) = system.current_solution(dof_indices_u[1]) -
-                        (flow_vec[dof_indices_neighbor_1_u[0]] +
-                         flow_vec[dof_indices_neighbor_2_u[0]]);
+                    Fp(1) += const_2 * dAdt_b;
+
+                    Fp(1) += dQdt_b;
+                    Fp(1) += gamma_v * (Q_b / p_b);
+                }
+
+                else if (outlet_bc == 2)
+                {
+                    Fp(1) = 0.0;
+
+                    double A0_cur = M_PI * pow(vessels[elem_id].r, 2);
+                    double A0bybeta = A0_cur / vessels[elem_id].beta;
+                    double At_cur = pow(
+                        sqrt(A0_cur) +
+                            A0bybeta * (PDrain(ttime) +
+                                        sqrt(p_0 / rho_v) * ((L_v * L_v) / gamma_perm) *
+                                            system.current_solution(dof_indices_u[1])),
+                        2);
+
+                    Fp(1) += system.current_solution(dof_indices_p[1]);
+                    Fp(1) += -At_cur;
+                }
+            }
+            else if (venous_flow == 1)
+            {
+                if (elem_id < vessels_in.size())
+                {
+                    fe_face->reinit(elem, 1);
+                    fe_face_p->reinit(elem, 1);
+
+                    double dQdx_b = 0.0;
+                    double dpdx_b = 0.0;
+
+                    for (unsigned int i = 0; i < n_u_dofs; i++)
+                    {
+                        dQdx_b +=
+                            dphi_face[i][0](0) * system.current_solution(dof_indices_u[i]);
+                    }
+
+                    double dQdx_b_old = 0.0;
+                    for (unsigned int i = 0; i < n_u_dofs; i++)
+                    {
+                        dQdx_b_old += dphi_face[i][0](0) *
+                                      system_old.current_solution(dof_indices_u_old[i]);
+                    }
+
+                    for (unsigned int i = 0; i < n_p_dofs; i++)
+                    {
+                        dpdx_b +=
+                            dphi_face_p[i][0](0) * system.current_solution(dof_indices_p[i]);
+                    }
+
+                    double dpdx_b_old = 0.0;
+                    for (unsigned int i = 0; i < n_p_dofs; i++)
+                    {
+                        dpdx_b_old += dphi_face_p[i][0](0) *
+                                      system_old.current_solution(dof_indices_p_old[i]);
+                    }
+
+                    Fu(1) = 0.0;
+                    Fu(1) += const_1 * (dAdt_b + dQdx_b);
+                    Fu(1) += dQdt_b;
+                    Fu(1) += ((2.0 * alpha_v * Q_b) / p_b) * dQdx_b;
+                    Fu(1) += (-((alpha_v * Q_b * Q_b) / (p_b * p_b)) +
+                              betaV(elem_id, r_b) * dpofA(p_b)) *
+                             dpdx_b;
+                    Fu(1) += gamma_v * (Q_b / p_b);
+
+                    // Fp(1) = system.current_solution(dof_indices_u[1]) -
+                    //         (system.current_solution(dof_indices_neighbor_1_u[0]) +
+                    //          system.current_solution(dof_indices_neighbor_2_u[0]));
+
+                    if (st_tree == 0)
+                    {
+                        Fp(1) = system.current_solution(dof_indices_u[1]) +
+                                flow_vec[dof_indices_neighbor_out_u[1]];
+                    }
+                    else if (st_tree == 1)
+                    {
+                        int vessel_ter_num = vessels[elem_id].ter_num;
+
+                        if (vessel_ter_num == -10)
+                            cout << "error in terminal number" << endl;
+                        else
+                            Fp(1) = system.current_solution(dof_indices_u[1]) - qArt[vessel_ter_num];
+                    }
+                }
+                else
+                {
+
+                    fe_face->reinit(elem, 1);
+                    fe_face_p->reinit(elem, 1);
+
+                    double dQdx_b = 0.0;
+                    double dpdx_b = 0.0;
+
+                    for (unsigned int i = 0; i < n_u_dofs; i++)
+                    {
+                        dQdx_b +=
+                            dphi_face[i][0](0) * system.current_solution(dof_indices_u[i]);
+                    }
+
+                    double dQdx_b_old = 0.0;
+                    for (unsigned int i = 0; i < n_u_dofs; i++)
+                    {
+                        dQdx_b_old += dphi_face[i][0](0) *
+                                      system_old.current_solution(dof_indices_u_old[i]);
+                    }
+
+                    for (unsigned int i = 0; i < n_p_dofs; i++)
+                    {
+                        dpdx_b +=
+                            dphi_face_p[i][0](0) * system.current_solution(dof_indices_p[i]);
+                    }
+
+                    double dpdx_b_old = 0.0;
+                    for (unsigned int i = 0; i < n_p_dofs; i++)
+                    {
+                        dpdx_b_old += dphi_face_p[i][0](0) *
+                                      system_old.current_solution(dof_indices_p_old[i]);
+                    }
+
+                    Fu(1) = 0.0;
+                    Fu(1) += const_2 * (dAdt_b + dQdx_b);
+                    Fu(1) += dQdt_b;
+                    Fu(1) += ((2.0 * alpha_v * Q_b) / p_b) * dQdx_b;
+                    Fu(1) += (-((alpha_v * Q_b * Q_b) / (p_b * p_b)) +
+                              betaV(elem_id, r_b) * dpofA(p_b)) *
+                             dpdx_b;
+                    Fu(1) += gamma_v * (Q_b / p_b);
+
+                    double A_n = flow_vec[dof_indices_neighbor_out_p[1]];
+                    double A_n0 = M_PI * pow(vessels[elem_id_n_out].r, 2);
+                    double A0_b = M_PI * pow(vessels[elem_id].r, 2);
+
+                    double Q_n = flow_vec[dof_indices_neighbor_out_u[1]];
+
+                    if (st_tree == 0)
+                    {
+                        if (interface_type == 0)
+                        {
+                            Fp(1) = ((vessels[elem_id].beta / A0_b) /
+                                     ((vessels[0].beta / (M_PI * pow(vessels[0].r, 2))))) *
+                                    (sqrt(A_new) - sqrt(A0_b));
+                            Fp(1) -= ((vessels[elem_id_n_out].beta / A_n0) /
+                                      ((vessels[0].beta / (M_PI * pow(vessels[0].r, 2))))) *
+                                     (sqrt(A_n) - sqrt(A_n0));
+
+                            /* Fp(1) += (vessels[elem_id].pext - vessels[elem_id_n_out].pext) /
+                                     ((vessels[0].beta / (M_PI * pow(vessels[0].r, 2)))); */
+                        }
+
+                        else if (interface_type == 1)
+                        {
+                            Fp(1) = (vessels[elem_id].beta / A0_b) * (sqrt(A_new) - sqrt(A0_b));
+                            Fp(1) += 0.5 * rho_v * pow(Q_b / A_new, 2);
+                            Fp(1) -= (vessels[elem_id_n_out].beta / A_n0) * (sqrt(A_n) - sqrt(A_n0));
+                            Fp(1) -= 0.5 * rho_v * pow(Q_n / A_n, 2);
+
+                            /* Fp(0) += (vessels[elem_id].pext - vessels[elem_id_n_out].pext); */
+                        }
+                    }
+
+                    else if (st_tree == 1)
+                    {
+                        int vessel_ter_num = vessels[elem_id].ter_num;
+
+                        if (vessel_ter_num == -10)
+                            cout << "error in terminal number" << endl;
+                        else
+                            Fp(1) = system.current_solution(dof_indices_u[1]) - qVein[vessel_ter_num];
+                    }
+                }
             }
         }
 
-        for (unsigned int side = 0; side < elem->n_sides(); side++)
+        else if ((vessels[elem_id].ter == 3)) // inlet
         {
-            double r_b = 0.0;
-            if (side == 0)
-                r_b = vessels[elem_id].r1;
-            else if (side == 1)
-                r_b = vessels[elem_id].r2;
+            unsigned int side = 0;
 
-            if (elem->neighbor_ptr(side) == libmesh_nullptr)
+            fe_face->reinit(elem, side);
+            fe_face_p->reinit(elem, side);
+
+            double dQdx_b = 0.0;
+            double dpdx_b = 0.0;
+
+            for (unsigned int i = 0; i < n_u_dofs; i++)
             {
-
-                const std::vector<Point> &normal_face = fe_face->get_normals();
-
-                const std::vector<std::vector<Real>> &phi_face = fe_face->get_phi();
-
-                const std::vector<Point> &Xref = fe_face->get_xyz();
-
-                fe_face->reinit(elem, side);
-                // short int bc_id = mesh.boundary_info->boundary_id(elem, side);
-
-                vector<boundary_id_type> bc_id_vec;
-                mesh.boundary_info->boundary_ids(elem, side, bc_id_vec);
-                short int bc_id =
-                    bc_id_vec[0];
-
-                if (bc_id == 1000) // left boundary
-                {
-                    double p_left =
-                        AInlet(ttime); // system.current_solution(dof_indices_p[0]);
-                    double Q_left = system.current_solution(dof_indices_u[0]);
-
-                    double p_left_old = AInlet(
-                        ttime -
-                        dt_v); // system_old.current_solution(dof_indices_p_old[0]);
-                    double Q_left_old = system_old.current_solution(dof_indices_u_old[0]);
-
-                    if (eigen_bound != 2)
-                    {
-                        if (intervess_type == 0)
-                        {
-                            Fu(0) += alpha_t * (alpha_v * ((Q_left * Q_left) / p_left)) *
-                                     normal_face[0].operator()(0);
-
-                            Fu(0) += (1.0 - alpha_t) *
-                                     (alpha_v * ((Q_left_old * Q_left_old) / p_left_old)) *
-                                     normal_face[0].operator()(0);
-                        }
-
-                        Fu(0) += alpha_t * (betaV(elem_id, r_b) * pofA(p_left)) *
-                                 normal_face[0].operator()(0);
-
-                        Fu(0) += (1.0 - alpha_t) *
-                                 (betaV(elem_id, r_b) * pofA(p_left_old)) *
-                                 normal_face[0].operator()(0);
-                    }
-
-                    if (eigen_bound != 2)
-                    {
-                        Fp(0) += alpha_t * Q_left * normal_face[0].operator()(0);
-                        Fp(0) += (1.0 - alpha_t) * Q_left * normal_face[0].operator()(0);
-                    }
-                }
-
-                if (bc_id == 4000) // right boundary
-                {
-                    // double A_right = (M_PI * vessels[elem_id].r *
-                    // vessels[elem_id].r); double p_right = A_right;
-                    double p_right = AOutlet(ttime, elem_id);
-
-                    double Q_right = system.current_solution(dof_indices_u[1]);
-
-                    double p_right_old = AOutlet(ttime - dt_v, elem_id);
-                    double Q_right_old =
-                        system_old.current_solution(dof_indices_u_old[1]);
-
-                    if (eigen_bound != 2)
-                    {
-                        if (intervess_type == 0)
-                        {
-                            Fu(1) += alpha_t * (alpha_v * ((Q_right * Q_right) / p_right)) *
-                                     normal_face[0].operator()(0);
-
-                            Fu(1) += (1.0 - alpha_t) *
-                                     (alpha_v * ((Q_right_old * Q_right_old) / p_right_old)) *
-                                     normal_face[0].operator()(0);
-                        }
-
-                        Fu(1) += alpha_t * (betaV(elem_id, r_b) * pofA(p_right)) *
-                                 normal_face[0].operator()(0);
-
-                        Fu(1) += (1.0 - alpha_t) *
-                                 (betaV(elem_id, r_b) * pofA(p_right_old)) *
-                                 normal_face[0].operator()(0);
-                    }
-
-                    if (eigen_bound != 2)
-                    {
-                        Fp(1) += alpha_t * Q_right * normal_face[0].operator()(0);
-                        Fp(1) += (1.0 - alpha_t) * Q_right * normal_face[0].operator()(0);
-                    }
-                }
-                //
-                if (bc_id == 2000) // parent boundary at junction
-                {
-                    // cout << "elem_id=" << elem_id << " bc_id=" << bc_id << endl;
-
-                    double Q_neigh1 = flow_vec
-                        [dof_indices_neighbor_1_u
-                             [0]]; //              system.current_solution(dof_indices_neighbor_1_u[0]);
-                    double Q_neigh2 = flow_vec
-                        [dof_indices_neighbor_2_u
-                             [0]]; //              system.current_solution(dof_indices_neighbor_2_u[0]);
-
-                    if (eigen_bound != 2)
-                    {
-                        Fp(1) += (Q_neigh1 + Q_neigh2) * normal_face[0].operator()(0);
-                    }
-
-                    double p_right = system.current_solution(dof_indices_p[1]);
-
-                    double Q_right =
-                        (Q_neigh1 +
-                         Q_neigh2); // system.current_solution(dof_indices_u[1]);
-
-                    if (eigen_bound != 2)
-                    {
-                        if (intervess_type == 0)
-                            Fu(1) += (alpha_v * (((Q_right) * (Q_right)) / p_right)) *
-                                     normal_face[0].operator()(0);
-
-                        Fu(1) += (betaV(elem_id, r_b) * pofA(p_right)) *
-                                 normal_face[0].operator()(0);
-                    }
-                }
-
-                if (bc_id == 3000) // daughter boundary at junction
-                {
-                    double Q_left = system.current_solution(dof_indices_u[0]);
-
-                    if (eigen_bound != 2)
-                    {
-                        Fp(0) += Q_left * normal_face[0].operator()(0);
-                    }
-
-                    double p_neigh = flow_vec
-                        [dof_indices_neighbor_p
-                             [1]]; // system.current_solution(dof_indices_neighbor_p[1]);
-
-                    // p_neigh = sqrt(p_neigh);
-                    // p_neigh -= sqrt(M_PI * pow(vessels[elem_id_n].r, 2));
-                    // p_neigh *= (vessels[elem_id_n].beta / vessels[elem_id].beta);
-                    // p_neigh *=
-                    //     (pow(vessels[elem_id].r, 2) / pow(vessels[elem_id_n].r, 2));
-                    // p_neigh += sqrt(M_PI * pow(vessels[elem_id_n].r, 2));
-                    //
-                    // p_neigh = pow(p_neigh, 2);
-
-                    if (eigen_bound != 2)
-                    {
-                        if (intervess_type == 0)
-                            Fu(0) += (alpha_v * ((Q_left * Q_left) / p_neigh)) *
-                                     normal_face[0].operator()(0);
-
-                        Fu(0) += (betaV(elem_id, r_b) * pofA(p_neigh)) *
-                                 normal_face[0].operator()(0);
-                    }
-                }
+                dQdx_b +=
+                    dphi_face[i][0](0) * system.current_solution(dof_indices_u[i]);
             }
 
-            else
+            double dQdx_b_old = 0.0;
+            for (unsigned int i = 0; i < n_u_dofs; i++)
             {
-                if (intervess_type == 0)
-                {
-                    const std::vector<Point> &normal_face = fe_face->get_normals();
-                    fe_face->reinit(elem, side);
-
-                    double p_side = system.current_solution(dof_indices_p[side]);
-                    Fu(side) += (betaV(elem_id, r_b) * pofA(p_side)) *
-                                normal_face[0].operator()(0);
-                }
+                dQdx_b_old += dphi_face[i][0](0) *
+                              system_old.current_solution(dof_indices_u_old[i]);
             }
+
+            for (unsigned int i = 0; i < n_p_dofs; i++)
+            {
+                dpdx_b +=
+                    dphi_face_p[i][0](0) * system.current_solution(dof_indices_p[i]);
+            }
+
+            double dpdx_b_old = 0.0;
+            for (unsigned int i = 0; i < n_p_dofs; i++)
+            {
+                dpdx_b_old += dphi_face_p[i][0](0) *
+                              system_old.current_solution(dof_indices_p_old[i]);
+            }
+
+            Fu(0) = 0.0;
+            Fu(0) += const_2 * (dAdt_b + dQdx_b);
+            Fu(0) += dQdt_b;
+            Fu(0) += ((2.0 * alpha_v * Q_b) / p_b) * dQdx_b;
+            Fu(0) += (-((alpha_v * Q_b * Q_b) / (p_b * p_b)) +
+                      betaV(elem_id, r_b) * dpofA(p_b)) *
+                     dpdx_b;
+            Fu(0) += gamma_v * (Q_b / p_b);
+
+            double A_n = flow_vec
+                [dof_indices_neighbor_p
+                     [1]]; // system.current_solution(dof_indices_neighbor_p[1]);
+            double A_n0 = M_PI * pow(vessels[elem_id_n].r, 2);
+            double A0_b = M_PI * pow(vessels[elem_id].r, 2);
+
+            double Q_n = flow_vec
+                [dof_indices_neighbor_u
+                     [1]]; // system.current_solution(dof_indices_neighbor_u[1]);
+
+            if (interface_type == 0)
+            {
+                Fp(0) = ((vessels[elem_id].beta / A0_b) /
+                         ((vessels[0].beta / (M_PI * pow(vessels[0].r, 2))))) *
+                        (sqrt(A_new) - sqrt(A0_b));
+                Fp(0) -= ((vessels[elem_id_n].beta / A_n0) /
+                          ((vessels[0].beta / (M_PI * pow(vessels[0].r, 2))))) *
+                         (sqrt(A_n) - sqrt(A_n0));
+
+                Fp(0) += (vessels[elem_id].pext - vessels[elem_id_n].pext) /
+                         ((vessels[0].beta / (M_PI * pow(vessels[0].r, 2))));
+            }
+
+            else if (interface_type == 1)
+            {
+                Fp(0) = (vessels[elem_id].beta / A0_b) * (sqrt(A_new) - sqrt(A0_b));
+                Fp(0) += 0.5 * rho_v * pow(Q_b / A_new, 2);
+                Fp(0) -= (vessels[elem_id_n].beta / A_n0) * (sqrt(A_n) - sqrt(A_n0));
+                Fp(0) -= 0.5 * rho_v * pow(Q_n / A_n, 2);
+
+                Fp(0) += (vessels[elem_id].pext - vessels[elem_id_n].pext);
+            }
+        }
+
+        else if ((vessels[elem_id].ter == 2)) // outlet
+        {
+            fe_face->reinit(elem, 1);
+            fe_face_p->reinit(elem, 1);
+
+            double dQdx_b = 0.0;
+            double dpdx_b = 0.0;
+
+            for (unsigned int i = 0; i < n_u_dofs; i++)
+            {
+                dQdx_b +=
+                    dphi_face[i][0](0) * system.current_solution(dof_indices_u[i]);
+            }
+
+            double dQdx_b_old = 0.0;
+            for (unsigned int i = 0; i < n_u_dofs; i++)
+            {
+                dQdx_b_old += dphi_face[i][0](0) *
+                              system_old.current_solution(dof_indices_u_old[i]);
+            }
+
+            for (unsigned int i = 0; i < n_p_dofs; i++)
+            {
+                dpdx_b +=
+                    dphi_face_p[i][0](0) * system.current_solution(dof_indices_p[i]);
+            }
+
+            double dpdx_b_old = 0.0;
+            for (unsigned int i = 0; i < n_p_dofs; i++)
+            {
+                dpdx_b_old += dphi_face_p[i][0](0) *
+                              system_old.current_solution(dof_indices_p_old[i]);
+            }
+
+            Fu(1) = 0.0;
+            Fu(1) += const_1 * (dAdt_b + dQdx_b);
+            Fu(1) += dQdt_b;
+            Fu(1) += ((2.0 * alpha_v * Q_b) / p_b) * dQdx_b;
+            Fu(1) += (-((alpha_v * Q_b * Q_b) / (p_b * p_b)) +
+                      betaV(elem_id, r_b) * dpofA(p_b)) *
+                     dpdx_b;
+            Fu(1) += gamma_v * (Q_b / p_b);
+
+            // Fp(1) = system.current_solution(dof_indices_u[1]) -
+            //         (system.current_solution(dof_indices_neighbor_1_u[0]) +
+            //          system.current_solution(dof_indices_neighbor_2_u[0]));
+
+            Fp(1) = system.current_solution(dof_indices_u[1]) -
+                    (flow_vec[dof_indices_neighbor_1_u[0]] +
+                     flow_vec[dof_indices_neighbor_2_u[0]]);
         }
 
         // dof_map.constrain_element_vector(Fe, dof_indices);
 
         elem_count++;
-
-        // cout << "elem_id=" << elem_id << " Fp=" << Fp << " Fu=" << Fu <<
-        // endl; cout << "elem_id=" << elem_id << " Fe=" << Fe << endl;
 
         R.add_vector(Fe, dof_indices);
     } // end of element loop
@@ -2925,9 +2444,6 @@ void VesselFlow::initialise_area(EquationSystems &es)
                 A_vess = (M_PI * vessels[elem_id].r1 * vessels[elem_id].r1);
             else if (j == 1)
                 A_vess = (M_PI * vessels[elem_id].r2 * vessels[elem_id].r2);
-
-            if (flow_type == 0)
-                A_vess = 0.0;
 
             system.solution->set(dof_indices_p[j], A_vess);
         }
@@ -3131,18 +2647,6 @@ void VesselFlow::writeFlowDataTime(EquationSystems &es, int it, int rank)
 
             double rad1 = sqrt(A1 / M_PI);
             double rad2 = sqrt(A2 / M_PI);
-
-            if (flow_type == 0)
-            {
-                Q1 = Q1_prime * ((M_PI * pow(vessels[0].r, 4)) / (8.0 * mu_v));
-                Q2 = Q2_prime * ((M_PI * pow(vessels[0].r, 4)) / (8.0 * mu_v));
-
-                p1 = A1;
-                p2 = A2;
-
-                rad1 = vessels[n].r1;
-                rad2 = vessels[n].r2;
-            }
 
             // rad1 = vessels[n].r;
             // rad2 = vessels[n].r;
@@ -3369,35 +2873,7 @@ double VesselFlow::AInlet(double time_v)
     double AIn =
         pow(((PInlet(time_v) * A0_inlet) / vessels[0].beta) + sqrt(A0_inlet), 2);
 
-    if (flow_type == 0)
-    {
-        double p_in = 0.0;
-        // if (time_v < 0.55)
-        //   p_in = -3.492 * time_v + 10.633;
-        // else
-        //   p_in = 2684.65 * pow(time_v, 5) - 11841.55 * pow(time_v, 4) +
-        //          20733.89 * pow(time_v, 3) - 18009.55 * pow(time_v, 2) +
-        //          7751.91 * time_v - 1308.0;
-        //
-        // double p_out = 0.0;
-        // if (time_v < 0.2)
-        //   p_out = -1.067 * (time_v / 0.2);
-        // else if (time_v < 0.5)
-        //   p_out = -1.067;
-        // else if (time_v < 0.65)
-        //   p_out = -1.067 + 15.67 * (1.0 - exp(-pow(time_v - 0.5, 2) / 0.004));
-        // else if (time_v < 0.8)
-        //   p_out = 14.063 * (1.0 - exp(-pow(0.8 - time_v, 2) / 0.004));
-        // else
-        //   p_out = 0.0;
-
-        p_in = p_0;
-
-        return (p_in);
-        // return p_in;
-    }
-    else
-        return AIn;
+    return AIn;
 }
 
 double VesselFlow::AOutlet(double time_v, int n)
@@ -3406,36 +2882,7 @@ double VesselFlow::AOutlet(double time_v, int n)
     double AOut = pow(
         ((POutlet(time_v) * A0_outlet) / vessels[0].beta) + sqrt(A0_outlet), 2);
 
-    if (flow_type == 0)
-    {
-        double p_out = 0.0;
-        // if (time_v < 0.2)
-        //   p_out = -1.067 * (time_v / 0.2);
-        // else if (time_v < 0.5)
-        //   p_out = -1.067;
-        // else if (time_v < 0.65)
-        //   p_out = -1.067 + 14 * (1.0 - exp(-pow(time_v - 0.5, 2) / 0.04));
-        // else if (time_v < 0.8)
-        //   p_out = 12.933 * (1.0 - exp(-pow(0.8 - time_v, 2) / 0.04));
-        // else
-        //   p_out = 0.0;
-
-        // if (time_v < 0.2)
-        //   p_out = -1.067 * (time_v / 0.2);
-        // else if (time_v < 0.5)
-        //   p_out = -1.067;
-        // else if (time_v < 0.65)
-        //   p_out = -1.067 + 15.67 * (1.0 - exp(-pow(time_v - 0.5, 2) / 0.004));
-        // else if (time_v < 0.8)
-        //   p_out = 14.063 * (1.0 - exp(-pow(0.8 - time_v, 2) / 0.004));
-        // else
-        //   p_out = 0.0;
-
-        // return p_out;
-        return 0.0;
-    }
-    else
-        return AOut;
+    return AOut;
 }
 
 void VesselFlow::writeUpdatedVessels()
@@ -3517,52 +2964,33 @@ void VesselFlow::writeUpdatedVessels()
 double VesselFlow::source_q(double Q_cur, double p_cur)
 {
     double source_cur = 0.0;
-    if (flow_type == 0)
-        source_cur = gamma_v * Q_cur;
-    else if (flow_type == 1)
-        source_cur = gamma_v * (Q_cur / p_cur);
+    source_cur = gamma_v * (Q_cur / p_cur);
     return source_cur;
 }
 
 double VesselFlow::dsourcedQ(double Q_cur, double p_cur)
 {
     double dSdQ = 0.0;
-    if (flow_type == 0)
-        dSdQ = gamma_v;
-    else if (flow_type == 1)
-        dSdQ = gamma_v / p_cur;
+    dSdQ = gamma_v / p_cur;
     return dSdQ;
 }
 
 double VesselFlow::dsourcedp(double Q_cur, double p_cur)
 {
     double dSdp = 0.0;
-    if (flow_type == 0)
-        dSdp = 0.0;
-    else if (flow_type == 1)
-        dSdp = -gamma_v * (Q_cur / (p_cur * p_cur));
+    dSdp = -gamma_v * (Q_cur / (p_cur * p_cur));
     return dSdp;
 }
 
 double VesselFlow::betaV(int n, double r_cur)
 {
-    if (flow_type == 0)
-    {
-        double beta_cur = pow(vessels[n].r, 4);
-        beta_cur /= pow(vessels[0].r, 4);
 
-        return (beta_cur);
-    }
-
-    else
-    {
-        double beta_cur = 0.0;
-        if (wave_type == 0)
-            beta_cur = c_v * c_v * (rho_v / p_0);
-        else if (wave_type == 1)
-            beta_cur = (vessels[n].beta * L_v) / (3.0 * p_0 * M_PI * pow(r_cur, 2));
-        return beta_cur;
-    }
+    double beta_cur = 0.0;
+    if (wave_type == 0)
+        beta_cur = c_v * c_v * (rho_v / p_0);
+    else if (wave_type == 1)
+        beta_cur = (vessels[n].beta * L_v) / (3.0 * p_0 * M_PI * pow(r_cur, 2));
+    return beta_cur;
 }
 
 double VesselFlow::betaPr(int n, double r_cur)
@@ -3820,8 +3248,8 @@ void VesselFlow::writeFlowDataInlet(EquationSystems &es, int it, int rank)
         dof_map.dof_indices(elem, dof_indices_u, u_var);
         dof_map.dof_indices(elem, dof_indices_p, p_var);
 
-        double Q1_prime = flow_vec[dof_indices_u[0]]; 
-        double A1_prime = flow_vec[dof_indices_p[0]]; 
+        double Q1_prime = flow_vec[dof_indices_u[0]];
+        double A1_prime = flow_vec[dof_indices_p[0]];
 
         double Q1 = Q1_prime * sqrt(p_0 / rho_v) * L_v * L_v;
         double A1 = A1_prime * L_v * L_v;
@@ -3830,28 +3258,26 @@ void VesselFlow::writeFlowDataInlet(EquationSystems &es, int it, int rank)
                     (vessels[n].beta / (M_PI * vessels[n].r * vessels[n].r)) *
                         (sqrt(A1) - sqrt(M_PI * vessels[n].r * vessels[n].r));
 
-
         const Elem *elem_out = mesh.elem_ptr(vessels_in.size());
 
         dof_map.dof_indices(elem_out, dof_indices_u, u_var);
         dof_map.dof_indices(elem_out, dof_indices_p, p_var);
 
-        double Q1_prime_out = flow_vec[dof_indices_u[0]]; 
-        double A1_prime_out = flow_vec[dof_indices_p[0]]; 
+        double Q1_prime_out = flow_vec[dof_indices_u[0]];
+        double A1_prime_out = flow_vec[dof_indices_p[0]];
 
         double Q1_out = Q1_prime_out * sqrt(p_0 / rho_v) * L_v * L_v;
         double A1_out = A1_prime_out * L_v * L_v;
 
         double p1_out = vessels[n].pext +
-                    (vessels[n].beta / (M_PI * vessels[n].r * vessels[n].r)) *
-                        (sqrt(A1_out) - sqrt(M_PI * vessels[n].r * vessels[n].r));
-
+                        (vessels[n].beta / (M_PI * vessels[n].r * vessels[n].r)) *
+                            (sqrt(A1_out) - sqrt(M_PI * vessels[n].r * vessels[n].r));
 
         qArtTotal = 0.0;
         qVeinTotal = 0.0;
         pArtTotal = 0.0;
         pVeinTotal = 0.0;
-        for(int i=0;i<qArt.size();i++)
+        for (int i = 0; i < qArt.size(); i++)
         {
             qArtTotal += qArt[i];
             qVeinTotal += qVein[i];
@@ -3863,9 +3289,9 @@ void VesselFlow::writeFlowDataInlet(EquationSystems &es, int it, int rank)
         qArtTotal *= sqrt(p_0 / rho_v) * L_v * L_v;
         qVeinTotal *= sqrt(p_0 / rho_v) * L_v * L_v;
 
-        file_vess << ttime * sqrt(rho_v / p_0) * L_v << " " << Q1 << " " << p1 <<" "
-        <<qArtTotal<<" "<<pArtTotal<<" "<<qVeinTotal<<" "<<pVeinTotal<<" "
-        <<" "<<Q1_out<<" "<<p1_out<< endl;
+        file_vess << ttime * sqrt(rho_v / p_0) * L_v << " " << Q1 << " " << p1 << " "
+                  << qArtTotal << " " << pArtTotal << " " << qVeinTotal << " " << pVeinTotal << " "
+                  << " " << Q1_out << " " << p1_out << endl;
 
         file_vess.close();
     }
@@ -3946,7 +3372,6 @@ void VesselFlow::initialise_partvein(int rank, int np, LibMeshInit &init)
     y12.resize(N_period);
     y21.resize(N_period);
     y22.resize(N_period);
-
 
     pLt.resize(termNum.size());
     pRt.resize(termNum.size());
@@ -4032,13 +3457,12 @@ void VesselFlow::update_partvein(EquationSystems &es, int rank)
     std::vector<dof_id_type> dof_indices_u;
     std::vector<dof_id_type> dof_indices_p;
 
-
     if (rank == 0)
     {
 
         for (int i = 0; i < pArt(0).size(); i++)
         {
-            for (int j = N_period-1; j > 0; j--)
+            for (int j = N_period - 1; j > 0; j--)
             {
 
                 pLt(i)(j) = pLt(i)(j - 1);

@@ -115,10 +115,9 @@ public:
       p_out, c_v,p_in_const,p_out_const,p_ext_const;
   static double ttime, dt_v, dt,ttime_dim;
   static double alpha_t;
-  static int eigen_bound;
-  static int flow_type, time_integ, time_itr, inlet_bc, outlet_bc,time_itr_per;
+  static int time_integ, time_itr, inlet_bc, outlet_bc,time_itr_per;
   static string vessel_file_name, restart_file_name, partvein_file_name;
-  static int beta_type, pin_type, pout_type, interface_type, intervess_type,
+  static int beta_type, pin_type, pout_type, interface_type, 
       wave_type,pext_type,venous_flow, st_tree;
   static double t_load, time_per;
   static double gamma_perm;

@@ -7,12 +7,9 @@ st_tree = 1
 restart_file_name = restart_data_double_32767.dat
 partvein_file_name = partvein_data_double_32767.dat
 
-flow_type = 1 // 0 for poisuille, 1 for 1D flow
 trans_soln = 1
-eigen_bound = 2 // 0 no BC using eigen, 1 Eqs. 26 and 27 in Lee 2008 in weak form (Removed in this version, refer 84_29_30_2022), 2 same in strong form
 beta_type = 1 // 0 for constant beta, 1 for linearly dependent on r
 interface_type = 0 // 0 for pressure, 1 for pressure and kinetic energy
-intervess_type = 1
 wave_type = 0 // 0 for constant wave speed
 
 time_integ = 2 // 1 for BDF1, 2 for BDF 2
