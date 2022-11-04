@@ -126,7 +126,7 @@ public:
   static vector<int> termNum;
   static int N_period,N_total;
   static DenseVector<DenseVector<double>> pLt,pRt;
-  static double qArtTotal,qVeinTotal,pArtTotal,pVeinTotal;
+  static double qArtTotal,qVeinTotal,pArtTotal,pVeinTotal,pInCur,pOutCur,qInCur,qOutCur;
 
   static DenseVector<double> y11, y12, y21, y22;
 
@@ -156,7 +156,7 @@ public:
   static void update_beta();
   static void add_vessels(int i);
   static void writeFlowDataTime(EquationSystems &es, int it, int rank);
-  static void writeFlowDataInlet(EquationSystems &es, int it, int rank);
+  static void writeFlowDataBound(EquationSystems &es, int it, int rank);
   static double pofA(double A_cur);
   static double dpofA(double A_cur);
   static double d2pofA(double A_cur);
@@ -174,6 +174,7 @@ public:
   static double PInlet(double time_v);
   static double POutlet(double time_v);
   static double PDrain(double time_v);
+  static double PExt();
   static void compute_pext(double time_v);
 
   static void updateImpedance();
@@ -184,6 +185,7 @@ public:
   static void read_vessel_restart(int rank, int np, LibMeshInit &init);
   static void write_restart_data(EquationSystems &es, int it, int rank);
   static void update_qartvein(int rank);
+  static void update_pqbound(EquationSystems & es,int rank);
 };
 
 #endif

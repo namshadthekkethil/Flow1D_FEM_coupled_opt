@@ -40,7 +40,8 @@ int VesselFlow::N_period, VesselFlow::N_total;
 
 DenseVector<double> VesselFlow::y11, VesselFlow::y12, VesselFlow::y21, VesselFlow::y22;
 
-double VesselFlow::qArtTotal, VesselFlow::qVeinTotal, VesselFlow::pArtTotal, VesselFlow::pVeinTotal;
+double VesselFlow::qArtTotal, VesselFlow::qVeinTotal, VesselFlow::pArtTotal, VesselFlow::pVeinTotal,
+    VesselFlow::pInCur, VesselFlow::pOutCur, VesselFlow::qInCur, VesselFlow::qOutCur;
 
 VesselFlow::VesselFlow() {}
 
@@ -1217,7 +1218,7 @@ void VesselFlow::compute_jacobian(const NumericVector<Number> &,
 
                     double sqrt_At_cur =
                         sqrt(A0_cur) +
-                        A0bybeta * (POutlet(ttime) +
+                        A0bybeta * ((POutlet(ttime)-PExt()) +
                                     sqrt(p_0 / rho_v) * ((L_v * L_v) / gamma_perm) *
                                         system.current_solution(dof_indices_u[1]));
 
@@ -2100,7 +2101,7 @@ void VesselFlow::compute_residual(const NumericVector<Number> &X,
                     double A0bybeta = A0_cur / vessels[elem_id].beta;
                     double At_cur = pow(
                         sqrt(A0_cur) +
-                            A0bybeta * (POutlet(ttime) +
+                            A0bybeta * ((POutlet(ttime)-PExt()) +
                                         sqrt(p_0 / rho_v) * ((L_v * L_v) / gamma_perm) *
                                             system.current_solution(dof_indices_u[1])),
                         2);
@@ -2702,9 +2703,8 @@ double VesselFlow::d2pofA(double A_cur)
         return (1.5 * 0.5 * pow(A_cur, -0.5));
 }
 
-void VesselFlow::compute_pext(double time_v)
+double VesselFlow::PExt()
 {
-    double t_c = sqrt(rho_v / p_0) * L_v;
     double pext_cur = 0.0;
 
     if (pext_type == 0)
@@ -2762,6 +2762,13 @@ void VesselFlow::compute_pext(double time_v)
 
         pext_cur *= 0.13332;
     }
+
+    return pext_cur;
+}
+
+void VesselFlow::compute_pext(double time_v)
+{
+    double pext_cur = PExt();
 
     for (int n = 0; n < vessels.size(); n++)
     {
@@ -3216,7 +3223,7 @@ void VesselFlow::add_element_node_3(Mesh &mesh, int i)
     }
 }
 
-void VesselFlow::writeFlowDataInlet(EquationSystems &es, int it, int rank)
+void VesselFlow::writeFlowDataBound(EquationSystems &es, int it, int rank)
 {
     string name = "flow_data_inlet";
     string fileend = ".dat";
@@ -3228,97 +3235,16 @@ void VesselFlow::writeFlowDataInlet(EquationSystems &es, int it, int rank)
 
     ofstream file_vess;
 
-    const MeshBase &mesh = es.get_mesh();
-
-    LinearImplicitSystem &system =
-        es.get_system<LinearImplicitSystem>("flowSystem");
-
-    // Numeric ids corresponding to each variable in the system
-    const unsigned int u_var = system.variable_number("QVar");
-    const unsigned int p_var = system.variable_number("pVar");
-
-    NumericVector<double> &flow_data = *(system.current_local_solution);
-    flow_data.close();
-
-    vector<double> flow_vec;
-    flow_data.localize(flow_vec);
-
-    const DofMap &dof_map = system.get_dof_map();
-    std::vector<dof_id_type> dof_indices_u;
-    std::vector<dof_id_type> dof_indices_p;
-
-    // MeshBase::const_element_iterator el = mesh.active_local_elements_begin();
-    // const MeshBase::const_element_iterator end_el =
-    //     mesh.active_local_elements_end();
+    update_pqbound(es, rank);
 
     if (rank == 0)
     {
 
         file_vess.open(out_frame, ios::app);
 
-        MeshBase::const_element_iterator el = mesh.active_elements_begin();
-        const MeshBase::const_element_iterator end_el = mesh.active_elements_end();
-
-        const Elem *elem = *el;
-
-        const auto n = elem->id();
-        dof_map.dof_indices(elem, dof_indices_u, u_var);
-        dof_map.dof_indices(elem, dof_indices_p, p_var);
-
-        double Q1_prime = flow_vec[dof_indices_u[0]];
-        double A1_prime = flow_vec[dof_indices_p[0]];
-
-        double Q1 = Q1_prime * sqrt(p_0 / rho_v) * L_v * L_v;
-        double A1 = A1_prime * L_v * L_v;
-
-        double p1 = vessels[n].pext +
-                    (vessels[n].beta / (M_PI * vessels[n].r * vessels[n].r)) *
-                        (sqrt(A1) - sqrt(M_PI * vessels[n].r * vessels[n].r));
-
-        if(venous_flow == 0)
-        {
-            file_vess << ttime * sqrt(rho_v / p_0) * L_v << " " << Q1 << " " << p1 <<endl;
-        }
-
-        else if (venous_flow == 1)
-        {
-            const Elem *elem_out = mesh.elem_ptr(vessels_in.size());
-
-            dof_map.dof_indices(elem_out, dof_indices_u, u_var);
-            dof_map.dof_indices(elem_out, dof_indices_p, p_var);
-
-            double Q1_prime_out = flow_vec[dof_indices_u[0]];
-            double A1_prime_out = flow_vec[dof_indices_p[0]];
-
-            double Q1_out = Q1_prime_out * sqrt(p_0 / rho_v) * L_v * L_v;
-            double A1_out = A1_prime_out * L_v * L_v;
-
-            double p1_out = vessels[n].pext +
-                            (vessels[n].beta / (M_PI * vessels[n].r * vessels[n].r)) *
-                                (sqrt(A1_out) - sqrt(M_PI * vessels[n].r * vessels[n].r));
-
-            qArtTotal = 0.0;
-            qVeinTotal = 0.0;
-            pArtTotal = 0.0;
-            pVeinTotal = 0.0;
-            for (int i = 0; i < qArt.size(); i++)
-            {
-                qArtTotal += qArt[i];
-                qVeinTotal += qVein[i];
-
-                pArtTotal += pArt(time_itr_per)[i];
-                pVeinTotal += pVein(time_itr_per)[i];
-            }
-
-            qArtTotal *= sqrt(p_0 / rho_v) * L_v * L_v;
-            qVeinTotal *= sqrt(p_0 / rho_v) * L_v * L_v;
-
-            file_vess << ttime * sqrt(rho_v / p_0) * L_v << " " << Q1 << " " << p1 << " "
-                      << qArtTotal << " " << pArtTotal << " " << qVeinTotal << " " << pVeinTotal << " "
-                      << " " << Q1_out << " " << p1_out << endl;
-        }
-        
-
+        file_vess << ttime * sqrt(rho_v / p_0) * L_v << " " << qInCur << " " << pInCur << " "
+                  << qArtTotal << " " << pArtTotal << " " << qVeinTotal << " " << pVeinTotal << " "
+                  << " " << qOutCur << " " << pOutCur << endl;
         file_vess.close();
     }
 }
@@ -3561,6 +3487,119 @@ void VesselFlow::update_qartvein(int rank)
         MPI_Bcast(&qArt[i], 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
         MPI_Bcast(&qVein[i], 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
     }
+}
+
+void VesselFlow::update_pqbound(EquationSystems &es, int rank)
+{
+    const MeshBase &mesh = es.get_mesh();
+
+    LinearImplicitSystem &system =
+        es.get_system<LinearImplicitSystem>("flowSystem");
+
+    // Numeric ids corresponding to each variable in the system
+    const unsigned int u_var = system.variable_number("QVar");
+    const unsigned int p_var = system.variable_number("pVar");
+
+    NumericVector<double> &flow_data = *(system.current_local_solution);
+    flow_data.close();
+
+    vector<double> flow_vec;
+    flow_data.localize(flow_vec);
+
+    const DofMap &dof_map = system.get_dof_map();
+    std::vector<dof_id_type> dof_indices_u;
+    std::vector<dof_id_type> dof_indices_p;
+
+    if (rank == 0)
+    {
+        pArtTotal = 0.0, qArtTotal = 0.0;
+        pVeinTotal = 0.0, qVeinTotal = 0.0;
+        pInCur = 0.0, qInCur = 0.0;
+        pOutCur = 0.0, qOutCur = 0.0;
+
+        int n = 0;
+        const Elem *elem_in = mesh.elem_ptr(n);
+
+        dof_map.dof_indices(elem_in, dof_indices_u, u_var);
+        dof_map.dof_indices(elem_in, dof_indices_p, p_var);
+
+        double A2_prime_in = flow_vec[dof_indices_p[1]];
+        double A2_in = A2_prime_in * L_v * L_v;
+        double p2_in = vessels[n].pext +
+                       (vessels[n].beta / (M_PI * vessels[n].r * vessels[n].r)) *
+                           (sqrt(A2_in) - sqrt(M_PI * vessels[n].r * vessels[n].r));
+
+        pInCur = p2_in;
+        qInCur = flow_vec[dof_indices_u[1]] * sqrt(p_0 / rho_v) * L_v * L_v;
+
+        if (venous_flow == 1)
+        {
+            n = vessels_in.size();
+            const Elem *elem_out = mesh.elem_ptr(n);
+
+            dof_map.dof_indices(elem_out, dof_indices_u, u_var);
+            dof_map.dof_indices(elem_out, dof_indices_p, p_var);
+
+            double A2_prime_out = flow_vec[dof_indices_p[1]];
+            double A2_out = A2_prime_out * L_v * L_v;
+            double p2_out = vessels[n].pext +
+                            (vessels[n].beta / (M_PI * vessels[n].r * vessels[n].r)) *
+                                (sqrt(A2_out) - sqrt(M_PI * vessels[n].r * vessels[n].r));
+
+            pOutCur = p2_out;
+            qOutCur = flow_vec[dof_indices_u[1]] * sqrt(p_0 / rho_v) * L_v * L_v;
+        }
+
+        for (int i = 0; i < pArt(0).size(); i++)
+        {
+            n = termNum[i];
+            const Elem *elem = mesh.elem_ptr(n);
+
+            dof_map.dof_indices(elem, dof_indices_u, u_var);
+            dof_map.dof_indices(elem, dof_indices_p, p_var);
+
+            double A2_prime = flow_vec[dof_indices_p[1]];
+            double A2 = A2_prime * L_v * L_v;
+            double p2 = vessels[n].pext +
+                        (vessels[n].beta / (M_PI * vessels[n].r * vessels[n].r)) *
+                            (sqrt(A2) - sqrt(M_PI * vessels[n].r * vessels[n].r));
+
+            pArtTotal += p2;
+            qArtTotal += flow_vec[dof_indices_u[1]] * sqrt(p_0 / rho_v) * L_v * L_v;
+
+            if (venous_flow == 1)
+            {
+                n = termNum[i] + vessels_in.size();
+                const Elem *elem_v = mesh.elem_ptr(n);
+
+                dof_map.dof_indices(elem_v, dof_indices_u, u_var);
+                dof_map.dof_indices(elem_v, dof_indices_p, p_var);
+
+                double A2_prime_v = flow_vec[dof_indices_p[1]];
+                double A2_v = A2_prime_v * L_v * L_v;
+                double p2_v = vessels[n].pext +
+                              (vessels[n].beta / (M_PI * vessels[n].r * vessels[n].r)) *
+                                  (sqrt(A2_v) - sqrt(M_PI * vessels[n].r * vessels[n].r));
+
+                pVeinTotal += p2_v;
+                qVeinTotal += flow_vec[dof_indices_u[1]] * sqrt(p_0 / rho_v) * L_v * L_v;
+            }
+        }
+
+        pArtTotal /= (double)pArt(0).size();
+        pVeinTotal /= (double)pArt(0).size();
+    }
+    MPI_Bcast(&pInCur, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&qInCur, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+    MPI_Bcast(&pOutCur, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&qOutCur, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+    MPI_Bcast(&pArtTotal, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&pVeinTotal, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+    MPI_Bcast(&qArtTotal, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&qVeinTotal, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 }
 
 void VesselFlow::initialise_flow_data(EquationSystems &es)

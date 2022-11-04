@@ -181,7 +181,7 @@ void run_time_step(EquationSystems &es, Mesh &mesh, int rank,
     if (((count + 1) % 10 == 0))
     {
 
-      VesselFlow::writeFlowDataInlet(es, count, rank);
+      VesselFlow::writeFlowDataBound(es, count, rank);
     }
 
     if ((count + 1) % VesselFlow::N_period == 0)

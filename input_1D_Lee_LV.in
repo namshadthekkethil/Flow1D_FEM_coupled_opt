@@ -2,7 +2,7 @@ vessel_file = updated_vessels_Lee_data_term_rad_mod.dat // updated_vessels_Lee_i
 
 restart = 0
 restart_part_vein = 0
-st_tree = 1
+st_tree = 0
 
 restart_file_name = restart_data_double_32767.dat
 partvein_file_name = partvein_data_double_32767.dat
