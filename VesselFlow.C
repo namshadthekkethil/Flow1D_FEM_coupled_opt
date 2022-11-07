@@ -2826,6 +2826,21 @@ double VesselFlow::PInlet(double time_v)
         p_inlet *= 0.13332;
     }
 
+    else if (pin_type == 4)
+    {
+
+        if (ttime_dim < 0.55)
+            p_inlet = 101.776-(101.776-70.712)*(ttime_dim/0.55);
+        else if (ttime_dim < 0.7)
+            p_inlet = 70.712+(132.59-70.712)*(1-exp(-(pow(ttime_dim-0.55,2))/0.004));
+        else if (ttime_dim < 0.76)
+            p_inlet = 132.53 * (1 - exp(-(pow(0.8 - (ttime_dim),2)) / 0.0011));
+        else if (ttime_dim < 0.8)
+            p_inlet = 113328 * pow(ttime_dim, 3) - 271559 * pow(ttime_dim, 2) + 216817 * ttime_dim - 57578;
+
+        p_inlet *= 0.13332;
+    }
+
     return p_inlet;
 }
 
@@ -3471,8 +3486,8 @@ void VesselFlow::update_partvein(EquationSystems &es, int rank)
                  (vessels[n].beta / (M_PI * vessels[n].r * vessels[n].r)) *
                      (sqrt(A2) - sqrt(M_PI * vessels[n].r * vessels[n].r)); */
 
-            double p2 = (vessels[n].beta / (M_PI * vessels[n].r * vessels[n].r)) *
-                        (sqrt(A2) - sqrt(M_PI * vessels[n].r * vessels[n].r));
+            p2 = (vessels[n].beta / (M_PI * vessels[n].r * vessels[n].r)) *
+                     (sqrt(A2) - sqrt(M_PI * vessels[n].r * vessels[n].r));
 
             pVein(time_itr_per)[i] = p2;
             pRt(i)(0) = p2;
