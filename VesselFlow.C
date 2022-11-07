@@ -1218,7 +1218,7 @@ void VesselFlow::compute_jacobian(const NumericVector<Number> &,
 
                     double sqrt_At_cur =
                         sqrt(A0_cur) +
-                        A0bybeta * ((POutlet(ttime)-PExt()) +
+                        A0bybeta * ((POutlet(ttime) - PExt()) +
                                     sqrt(p_0 / rho_v) * ((L_v * L_v) / gamma_perm) *
                                         system.current_solution(dof_indices_u[1]));
 
@@ -2101,7 +2101,7 @@ void VesselFlow::compute_residual(const NumericVector<Number> &X,
                     double A0bybeta = A0_cur / vessels[elem_id].beta;
                     double At_cur = pow(
                         sqrt(A0_cur) +
-                            A0bybeta * ((POutlet(ttime)-PExt()) +
+                            A0bybeta * ((POutlet(ttime) - PExt()) +
                                         sqrt(p_0 / rho_v) * ((L_v * L_v) / gamma_perm) *
                                             system.current_solution(dof_indices_u[1])),
                         2);
@@ -3432,9 +3432,12 @@ void VesselFlow::update_partvein(EquationSystems &es, int rank)
 
             double A2_prime = flow_vec[dof_indices_p[1]];
             double A2 = A2_prime * L_v * L_v;
-            double p2 = vessels[n].pext +
+            /* double p2 = vessels[n].pext +
                         (vessels[n].beta / (M_PI * vessels[n].r * vessels[n].r)) *
-                            (sqrt(A2) - sqrt(M_PI * vessels[n].r * vessels[n].r));
+                            (sqrt(A2) - sqrt(M_PI * vessels[n].r * vessels[n].r)); */
+
+            double p2 = (vessels[n].beta / (M_PI * vessels[n].r * vessels[n].r)) *
+                        (sqrt(A2) - sqrt(M_PI * vessels[n].r * vessels[n].r));
 
             pArt(time_itr_per)[i] = p2;
             pLt(i)(0) = p2;
@@ -3447,9 +3450,12 @@ void VesselFlow::update_partvein(EquationSystems &es, int rank)
 
             A2_prime = flow_vec[dof_indices_p[1]];
             A2 = A2_prime * L_v * L_v;
-            p2 = vessels[n].pext +
+            /* p2 = vessels[n].pext +
                  (vessels[n].beta / (M_PI * vessels[n].r * vessels[n].r)) *
-                     (sqrt(A2) - sqrt(M_PI * vessels[n].r * vessels[n].r));
+                     (sqrt(A2) - sqrt(M_PI * vessels[n].r * vessels[n].r)); */
+
+            double p2 = (vessels[n].beta / (M_PI * vessels[n].r * vessels[n].r)) *
+                        (sqrt(A2) - sqrt(M_PI * vessels[n].r * vessels[n].r));
 
             pVein(time_itr_per)[i] = p2;
             pRt(i)(0) = p2;
