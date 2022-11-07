@@ -2750,13 +2750,13 @@ double VesselFlow::PExt()
     {
 
         if (ttime_dim < 0.2)
-            pext_cur = 13.0 * ((ttime_dim) / 0.2);
+            pext_cur = -13.0 * ((ttime_dim) / 0.2);
         else if ((ttime_dim) < 0.5)
-            pext_cur = 13.0;
+            pext_cur = -13.0;
         else if ((ttime_dim) < 0.7)
-            pext_cur = 13.0 + 160.0 * (1.0 - exp(-pow((ttime_dim)-0.5, 2) / 0.007));
+            pext_cur = -13.0 + 120.0 * (1.0 - exp(-pow((ttime_dim)-0.5, 2) / 0.007));
         else if ((ttime_dim) < 0.8)
-            pext_cur = 172.53 * (1.0 - exp(-pow(0.8 - (ttime_dim), 2) / 0.0015));
+            pext_cur = 106.53 * (1.0 - exp(-pow(0.8 - (ttime_dim), 2) / 0.0015));
         else
             pext_cur = 0.0;
 
@@ -2867,6 +2867,23 @@ double VesselFlow::POutlet(double time_v)
             p_outlet = 13.0 + 120.0 * (1.0 - exp(-pow((ttime_dim)-0.5, 2) / 0.007));
         else if ((ttime_dim) < 0.8)
             p_outlet = 132.53 * (1.0 - exp(-pow(0.8 - (ttime_dim), 2) / 0.0015));
+        else
+            p_outlet = 0.0;
+
+        p_outlet *= 0.13332;
+    }
+
+    else if (pout_type == 4)
+    {
+
+        if (ttime_dim < 0.2)
+            p_outlet = -13.0 * ((ttime_dim) / 0.2);
+        else if ((ttime_dim) < 0.5)
+            p_outlet = -13.0;
+        else if ((ttime_dim) < 0.7)
+            p_outlet = -13.0 + 120.0 * (1.0 - exp(-pow((ttime_dim)-0.5, 2) / 0.007));
+        else if ((ttime_dim) < 0.8)
+            p_outlet = 106.53 * (1.0 - exp(-pow(0.8 - (ttime_dim), 2) / 0.0015));
         else
             p_outlet = 0.0;
 
