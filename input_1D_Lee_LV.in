@@ -35,6 +35,9 @@ p_in_const = 101.8 // kPa
 p_out_const = 0.0 // kPa
 p_ext_const = 0.0 // kPa
 
+p_diastole = 13.0
+p_systole = 120.0
+
 venous_flow = 1
 
 t_load = 0.1 // s

@@ -127,6 +127,7 @@ public:
   static int N_period,N_total;
   static DenseVector<DenseVector<double>> pLt,pRt;
   static double qArtTotal,qVeinTotal,pArtTotal,pVeinTotal,pInCur,pOutCur,qInCur,qOutCur;
+  static double p_diastole,p_systole;
 
   static DenseVector<double> y11, y12, y21, y22;
 
@@ -186,6 +187,7 @@ public:
   static void write_restart_data(EquationSystems &es, int it, int rank);
   static void update_qartvein(int rank);
   static void update_pqbound(EquationSystems & es,int rank);
+  static double QInlet();
 };
 
 #endif

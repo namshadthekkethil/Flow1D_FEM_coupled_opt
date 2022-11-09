@@ -43,6 +43,8 @@ DenseVector<double> VesselFlow::y11, VesselFlow::y12, VesselFlow::y21, VesselFlo
 double VesselFlow::qArtTotal, VesselFlow::qVeinTotal, VesselFlow::pArtTotal, VesselFlow::pVeinTotal,
     VesselFlow::pInCur, VesselFlow::pOutCur, VesselFlow::qInCur, VesselFlow::qOutCur;
 
+double VesselFlow::p_diastole, VesselFlow::p_systole;
+
 VesselFlow::VesselFlow() {}
 
 VesselFlow::~VesselFlow() {}
@@ -98,6 +100,9 @@ void VesselFlow::read_input()
     p_in_const = infile("p_in_const", 0.0);
     p_out_const = infile("p_out_const", 0.0);
     p_ext_const = infile("p_ext_const", 0.0);
+
+    p_diastole = infile("p_diastole", 13.0);
+    p_systole = infile("p_systole", 120.0);
 
     st_tree = infile("st_tree", 0);
 
@@ -1106,6 +1111,24 @@ void VesselFlow::compute_jacobian(const NumericVector<Number> &,
 
                 Kpu(0, 0) += dconst_1_dQ * dAdt_b;
             }
+
+            else if (inlet_bc == 3)
+            {
+                for (unsigned int j = 0; j < n_u_dofs; j++)
+                {
+                    Kpu(0, j) = 0.0;
+                }
+
+                for (unsigned int j = 0; j < n_p_dofs; j++)
+                {
+                    Kpp(0, j) = 0.0;
+                }
+
+                if (elem_id < vessels_in.size())
+                    Kpu(0, 0) = 1.0;
+                else
+                    Kpp(0, 0) = 1.0;
+            }
         }
 
         else if ((vessels[elem_id].ter == 1)) // outlet
@@ -2033,6 +2056,23 @@ void VesselFlow::compute_residual(const NumericVector<Number> &X,
                 Fp(0) += dQdt_b;
                 Fp(0) += gamma_v * (Q_b / p_b);
             }
+
+            else if (inlet_bc == 3)
+            {
+                Fp(0) = 0.0;
+
+                if (venous_flow == 0)
+                    Fp(0) = system.current_solution(dof_indices_u[0]) - QInlet();
+
+                else if (venous_flow == 1)
+                {
+                    if (elem_id < vessels_in.size())
+                        Fp(0) = system.current_solution(dof_indices_u[0]) - QInlet();
+
+                    else
+                        Fp(0) = system.current_solution(dof_indices_p[0]) - AOutlet(ttime, elem_id);
+                }
+            }
         }
 
         else if ((vessels[elem_id].ter == 1)) // outlet
@@ -2731,15 +2771,16 @@ double VesselFlow::PExt()
 
     else if (pext_type == 3)
     {
+        double p_sys_max = p_diastole + p_systole * (1.0 - exp(-pow((0.7) - 0.5, 2) / 0.007));
 
         if (ttime_dim < 0.2)
-            pext_cur = 13.0 * ((ttime_dim) / 0.2);
+            pext_cur = p_diastole * ((ttime_dim) / 0.2);
         else if ((ttime_dim) < 0.5)
-            pext_cur = 13.0;
+            pext_cur = p_diastole;
         else if ((ttime_dim) < 0.7)
-            pext_cur = 13.0 + 120.0 * (1.0 - exp(-pow((ttime_dim)-0.5, 2) / 0.007));
+            pext_cur = p_diastole + p_systole * (1.0 - exp(-pow((ttime_dim)-0.5, 2) / 0.007));
         else if ((ttime_dim) < 0.8)
-            pext_cur = 132.53 * (1.0 - exp(-pow(0.8 - (ttime_dim), 2) / 0.0015));
+            pext_cur = p_sys_max * (1.0 - exp(-pow(0.8 - (ttime_dim), 2) / 0.0015));
         else
             pext_cur = 0.0;
 
@@ -2748,15 +2789,34 @@ double VesselFlow::PExt()
 
     else if (pext_type == 4)
     {
+        double p_sys_max = -p_diastole + p_systole * (1.0 - exp(-pow((0.7) - 0.5, 2) / 0.007));
 
         if (ttime_dim < 0.2)
-            pext_cur = -13.0 * ((ttime_dim) / 0.2);
+            pext_cur = -p_diastole * ((ttime_dim) / 0.2);
         else if ((ttime_dim) < 0.5)
-            pext_cur = -13.0;
+            pext_cur = -p_diastole;
         else if ((ttime_dim) < 0.7)
-            pext_cur = -13.0 + 120.0 * (1.0 - exp(-pow((ttime_dim)-0.5, 2) / 0.007));
+            pext_cur = -p_diastole + p_systole * (1.0 - exp(-pow((ttime_dim)-0.5, 2) / 0.007));
         else if ((ttime_dim) < 0.8)
-            pext_cur = 106.53 * (1.0 - exp(-pow(0.8 - (ttime_dim), 2) / 0.0015));
+            pext_cur = p_sys_max * (1.0 - exp(-pow(0.8 - (ttime_dim), 2) / 0.0015));
+        else
+            pext_cur = 0.0;
+
+        pext_cur *= 0.13332;
+    }
+
+    else if (pext_type == 5)
+    {
+        double p_sys_max = -p_diastole + p_systole * (1.0 - exp(-pow((0.65) - 0.5, 2) / 0.004));
+
+        if (ttime_dim < 0.2)
+            pext_cur = -p_diastole * ((ttime_dim) / 0.2);
+        else if ((ttime_dim) < 0.5)
+            pext_cur = -p_diastole;
+        else if ((ttime_dim) < 0.65)
+            pext_cur = -p_diastole + p_systole * (1.0 - exp(-pow((ttime_dim)-0.5, 2) / 0.004));
+        else if ((ttime_dim) < 0.8)
+            pext_cur = p_sys_max * (1.0 - exp(-pow(0.8 - (ttime_dim), 2) / 0.004));
         else
             pext_cur = 0.0;
 
@@ -2830,13 +2890,26 @@ double VesselFlow::PInlet(double time_v)
     {
 
         if (ttime_dim < 0.55)
-            p_inlet = 101.776-(101.776-70.712)*(ttime_dim/0.55);
+            p_inlet = 101.776 - (101.776 - 70.712) * (ttime_dim / 0.55);
         else if (ttime_dim < 0.7)
-            p_inlet = 70.712+(132.59-70.712)*(1-exp(-(pow(ttime_dim-0.55,2))/0.004));
+            p_inlet = 70.712 + (132.59 - 70.712) * (1 - exp(-(pow(ttime_dim - 0.55, 2)) / 0.004));
         else if (ttime_dim < 0.76)
-            p_inlet = 132.53 * (1 - exp(-(pow(0.8 - (ttime_dim),2)) / 0.0011));
+            p_inlet = 132.53 * (1 - exp(-(pow(0.8 - (ttime_dim), 2)) / 0.0011));
         else if (ttime_dim < 0.8)
             p_inlet = 113328 * pow(ttime_dim, 3) - 271559 * pow(ttime_dim, 2) + 216817 * ttime_dim - 57578;
+
+        p_inlet *= 0.13332;
+    }
+
+    else if (pin_type == 5)
+    {
+
+        if (ttime_dim < 0.55)
+            p_inlet = 101.776 - (101.776 - 70.712) * (ttime_dim / 0.55);
+        else if (ttime_dim < 0.7)
+            p_inlet = 70.712 + (132.59 - 70.712) * (1 - exp(-(pow(ttime_dim - 0.55, 2)) / 0.004));
+        else
+            p_inlet = 101.776+(132.53-101.776) * (1 - exp(-(pow(0.8 - (ttime_dim), 2)) / 0.0005));
 
         p_inlet *= 0.13332;
     }
@@ -2874,14 +2947,16 @@ double VesselFlow::POutlet(double time_v)
     else if (pout_type == 3)
     {
 
+        double p_sys_max = p_diastole + p_systole * (1.0 - exp(-pow((0.7) - 0.5, 2) / 0.007));
+
         if (ttime_dim < 0.2)
-            p_outlet = 13.0 * ((ttime_dim) / 0.2);
+            p_outlet = p_diastole * ((ttime_dim) / 0.2);
         else if ((ttime_dim) < 0.5)
-            p_outlet = 13.0;
+            p_outlet = p_diastole;
         else if ((ttime_dim) < 0.7)
-            p_outlet = 13.0 + 120.0 * (1.0 - exp(-pow((ttime_dim)-0.5, 2) / 0.007));
+            p_outlet = p_diastole + p_systole * (1.0 - exp(-pow((ttime_dim)-0.5, 2) / 0.007));
         else if ((ttime_dim) < 0.8)
-            p_outlet = 132.53 * (1.0 - exp(-pow(0.8 - (ttime_dim), 2) / 0.0015));
+            p_outlet = p_sys_max * (1.0 - exp(-pow(0.8 - (ttime_dim), 2) / 0.0015));
         else
             p_outlet = 0.0;
 
@@ -2890,15 +2965,34 @@ double VesselFlow::POutlet(double time_v)
 
     else if (pout_type == 4)
     {
+        double p_sys_max = -p_diastole + p_systole * (1.0 - exp(-pow((0.7) - 0.5, 2) / 0.007));
 
         if (ttime_dim < 0.2)
-            p_outlet = -13.0 * ((ttime_dim) / 0.2);
+            p_outlet = -p_diastole * ((ttime_dim) / 0.2);
         else if ((ttime_dim) < 0.5)
-            p_outlet = -13.0;
+            p_outlet = -p_diastole;
         else if ((ttime_dim) < 0.7)
-            p_outlet = -13.0 + 120.0 * (1.0 - exp(-pow((ttime_dim)-0.5, 2) / 0.007));
+            p_outlet = -p_diastole + p_systole * (1.0 - exp(-pow((ttime_dim)-0.5, 2) / 0.007));
         else if ((ttime_dim) < 0.8)
-            p_outlet = 106.53 * (1.0 - exp(-pow(0.8 - (ttime_dim), 2) / 0.0015));
+            p_outlet = p_sys_max * (1.0 - exp(-pow(0.8 - (ttime_dim), 2) / 0.0015));
+        else
+            p_outlet = 0.0;
+
+        p_outlet *= 0.13332;
+    }
+
+    else if (pout_type == 5)
+    {
+        double p_sys_max = -p_diastole + p_systole * (1.0 - exp(-pow((0.65) - 0.5, 2) / 0.004));
+
+        if (ttime_dim < 0.2)
+            p_outlet = -p_diastole * ((ttime_dim) / 0.2);
+        else if ((ttime_dim) < 0.5)
+            p_outlet = -p_diastole;
+        else if ((ttime_dim) < 0.65)
+            p_outlet = -p_diastole + p_systole * (1.0 - exp(-pow((ttime_dim)-0.5, 2) / 0.004));
+        else if ((ttime_dim) < 0.8)
+            p_outlet = p_sys_max * (1.0 - exp(-pow(0.8 - (ttime_dim), 2) / 0.004));
         else
             p_outlet = 0.0;
 
@@ -2939,6 +3033,24 @@ double VesselFlow::AOutlet(double time_v, int n)
         ((POutlet(time_v) * A0_outlet) / vessels[0].beta) + sqrt(A0_outlet), 2);
 
     return AOut;
+}
+
+double VesselFlow::QInlet()
+{
+    double qin_cur = 0.0;
+
+    if (ttime_dim < 0.2)
+        qin_cur = 5595.0 + (4616.0 - 5595.0) * (ttime_dim / 0.2);
+    else if (ttime_dim < 0.5)
+        qin_cur = 4616.0 + (3592.0 - 4616.0) * ((ttime_dim - 0.2) / 0.3);
+    else if (ttime_dim < 0.575)
+        qin_cur = -218846.0 * pow(ttime_dim, 2) + 216100.0 * ttime_dim - 49776.0;
+    else if (ttime_dim < 0.75)
+        qin_cur = -21096262.0 * pow(ttime_dim, 4) + 56320676.0 * pow(ttime_dim, 3) - 56391356.0 * pow(ttime_dim, 2) + 25093342.0 * ttime_dim - 4182792.0;
+    else
+        qin_cur = -1560149.0 * pow(ttime_dim, 2) + 2517185.0 * ttime_dim - 1009693.0;
+
+    return qin_cur/(sqrt(p_0 / rho_v) * L_v * L_v);
 }
 
 void VesselFlow::writeUpdatedVessels()
@@ -3487,7 +3599,7 @@ void VesselFlow::update_partvein(EquationSystems &es, int rank)
                      (sqrt(A2) - sqrt(M_PI * vessels[n].r * vessels[n].r)); */
 
             p2 = (vessels[n].beta / (M_PI * vessels[n].r * vessels[n].r)) *
-                     (sqrt(A2) - sqrt(M_PI * vessels[n].r * vessels[n].r));
+                 (sqrt(A2) - sqrt(M_PI * vessels[n].r * vessels[n].r));
 
             pVein(time_itr_per)[i] = p2;
             pRt(i)(0) = p2;
